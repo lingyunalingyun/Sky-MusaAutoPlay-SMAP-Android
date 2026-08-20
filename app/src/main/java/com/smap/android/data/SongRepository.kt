@@ -69,9 +69,10 @@ class SongRepository(private val context: Context) {
     private fun uniqueFile(originalName: String): File {
         val base = originalName.substringBeforeLast('.', originalName)
         val ext = originalName.substringAfterLast('.', "")
+        val bundledNames = assets.list("songs").orEmpty().toSet()
         var candidate = File(importedDir, originalName)
         var index = 2
-        while (candidate.exists()) {
+        while (candidate.exists() || candidate.name in bundledNames) {
             candidate = File(importedDir, if (ext.isEmpty()) "$base ($index)" else "$base ($index).$ext")
             index++
         }

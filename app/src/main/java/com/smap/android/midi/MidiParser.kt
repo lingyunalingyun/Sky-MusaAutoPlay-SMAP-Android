@@ -3,6 +3,7 @@ package com.smap.android.midi
 /** SMF（标准 MIDI 文件）解析出的独立事件，absoluteTick 为绝对 tick */
 data class MidiEvent(
     val absoluteTick: Int,
+    val trackIndex: Int,
     val status: Int,   // 0x8n~0xEn 通道消息 / 0xFF meta / 0xF0 sysex
     val data1: Int,
     val data2: Int
@@ -15,7 +16,8 @@ data class MidiEvent(
 data class MidiFileData(
     val format: Int,
     val division: Int,
-    val events: List<MidiEvent>
+    val events: List<MidiEvent>,
+    val trackNames: Map<Int, String>
 )
 
 /**
@@ -69,13 +71,14 @@ object MidiParser {
         pos += headerLen - 6
 
         val events = mutableListOf<MidiEvent>()
-        var lastStatus = 0
+        val trackNames = mutableMapOf<Int, String>()
 
         for (track in 0 until ntrks) {
             if (u32() != 0x4D54726B) throw IllegalArgumentException("缺 MTrk 块") // MTrk
             val trackLen = u32()
             val trackEnd = pos + trackLen
             var absTick = 0
+            var lastStatus = 0
 
             while (pos < trackEnd) {
                 absTick += readVarLen()
@@ -93,7 +96,7 @@ object MidiParser {
                     status in 0x80..0xEF -> {
                         val d1 = u8()
                         val d2 = if (status in 0xC0..0xDF) 0 else u8()
-                        events.add(MidiEvent(absTick, status, d1, d2))
+                        events.add(MidiEvent(absTick, track, status, d1, d2))
                     }
                     status == 0xF0 || status == 0xF7 -> { // sysex
                         val len = readVarLen()
@@ -104,7 +107,11 @@ object MidiParser {
                         val len = readVarLen()
                         if (type == 0x51 && len == 3) { // tempo
                             val t = (u8() shl 16) or (u8() shl 8) or u8()
-                            events.add(MidiEvent(absTick, 0xFF, 0x51, t))
+                            events.add(MidiEvent(absTick, track, 0xFF, 0x51, t))
+                        } else if (type == 0x03) {
+                            val nameBytes = bytes.copyOfRange(pos, (pos + len).coerceAtMost(bytes.size))
+                            trackNames[track] = nameBytes.toString(Charsets.UTF_8).trim()
+                            pos += len
                         } else {
                             pos += len
                         }
@@ -116,6 +123,6 @@ object MidiParser {
             if (pos > trackEnd) pos = trackEnd
         }
 
-        return MidiFileData(format, division, events)
+        return MidiFileData(format, division, events, trackNames)
     }
 }

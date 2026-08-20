@@ -44,19 +44,24 @@ object MidiImporter {
 
         // 3. tick → ms（tempo map 二分）
         fun tickToMs(tick: Int): Double {
-            var i = tempos.indices.last
-            while (i > 0 && tempos[i].first > tick) i--
-            val mpq = tempos[i].second
-            return tick.toDouble() / division * mpq / 1000.0
+            var microseconds = 0L
+            var previousTick = 0
+            var mpq = 500_000L
+            for ((tempoTick, tempoMpq) in tempos) {
+                if (tempoTick >= tick) break
+                microseconds += (tempoTick - previousTick).toLong() * mpq / division
+                previousTick = tempoTick
+                mpq = tempoMpq
+            }
+            microseconds += (tick - previousTick).toLong() * mpq / division
+            return microseconds / 1000.0
         }
 
         // 4. 自动移调: 白键率最高 + 中位音八度居中
         val rawNotes = notes.map { it.second }
         val semitone = suggestSemitone(rawNotes)
-        var med = rawNotes.sorted()[rawNotes.size / 2] + semitone
-        var oct = 0
-        while (med + oct * 12 < 60) oct++
-        while (med + oct * 12 > 84) oct--
+        val med = rawNotes.sorted()[rawNotes.size / 2] + semitone
+        val oct = kotlin.math.round((72f - med) / 12f).toInt()
         val shift = semitone + oct * 12
 
         // 5. 黑键方向吸附（当前 vs 前一个音高）
@@ -65,7 +70,7 @@ object MidiImporter {
             val dir = if (prevPitch == Int.MIN_VALUE) 0 else pitch.compareTo(prevPitch)
             prevPitch = pitch
             SongNote(tickToMs(tick).toInt(), toSkyKey(pitch + shift, dir))
-        }
+        }.distinctBy { "${it.key}@${it.time}" }
 
         val bpm = if (tempos[0].second > 0) (60_000_000.0 / tempos[0].second).toInt() else 120
 

@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 /** 琴键坐标（屏幕比例 0~1，播放时乘屏幕像素） */
 data class KeyPoint(val xRatio: Float, val yRatio: Float)
@@ -26,11 +27,27 @@ class PlayerEngine(private val scope: CoroutineScope) {
     @Volatile
     private var speed = 1f
 
+    @Volatile
+    private var paused = false
+
+    @Volatile
+    private var randomSpeed = false
+
     fun isRunning(): Boolean = running
 
     fun setSpeed(s: Float) {
-        speed = s.coerceIn(0.25f, 4f)
+        speed = s.coerceIn(0.5f, 2f)
     }
+
+    fun setRandomSpeed(enabled: Boolean) {
+        randomSpeed = enabled
+    }
+
+    fun pause() { paused = true }
+
+    fun resume() { paused = false }
+
+    fun isPaused(): Boolean = paused
 
     /**
      * 开始播放。
@@ -46,6 +63,7 @@ class PlayerEngine(private val scope: CoroutineScope) {
         screenH: Int,
         sendScreenTaps: Boolean = true,
         onNoteFired: (Int) -> Unit = {},
+        onProgress: (Long) -> Unit = {},
         onFinished: () -> Unit = {}
     ) {
         stop()
@@ -54,29 +72,48 @@ class PlayerEngine(private val scope: CoroutineScope) {
             return
         }
         running = true
+        paused = false
         job = scope.launch(Dispatchers.Default) {
-            val start = SystemClock.elapsedRealtime()
-            for (note in song.songNotes) {
-                if (!running) break
-                val targetMs = (note.time / speed).toLong()
-                val elapsed = SystemClock.elapsedRealtime() - start
-                if (targetMs > elapsed) delay(targetMs - elapsed)
-                if (!running) break
-                if (note.key in keys.indices) {
+            val notes = song.songNotes.sortedBy { it.time }
+            var index = 0
+            var songMs = 0.0
+            var lastRealMs = SystemClock.elapsedRealtime()
+            var randomCountdown = 0
+            var currentSpeed = speed
+            while (running && index < notes.size) {
+                val now = SystemClock.elapsedRealtime()
+                val realDelta = now - lastRealMs
+                lastRealMs = now
+                if (paused) {
+                    delay(10)
+                    continue
+                }
+                if (!randomSpeed) currentSpeed = speed
+                songMs += realDelta * currentSpeed
+                while (index < notes.size && notes[index].time <= songMs) {
+                    val note = notes[index++]
+                    if (note.key !in keys.indices) continue
                     val k = keys[note.key]
                     if (sendScreenTaps) {
                         SMAPAccessibilityService.tap(k.xRatio * screenW, k.yRatio * screenH)
                     }
                     onNoteFired(note.key)
+                    if (randomSpeed && --randomCountdown <= 0) {
+                        currentSpeed = 0.5f + Random.nextFloat() * 0.8f
+                        randomCountdown = Random.nextInt(2, 6)
+                    }
                 }
+                onProgress(songMs.toLong())
+                delay(1)
             }
             running = false
-            onFinished()
+            if (index >= notes.size) onFinished()
         }
     }
 
     fun stop() {
         running = false
+        paused = false
         job?.cancel()
         job = null
     }
