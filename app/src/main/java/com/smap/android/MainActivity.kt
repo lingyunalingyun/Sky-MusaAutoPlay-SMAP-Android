@@ -423,7 +423,6 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                 else if (playlist.isNotEmpty()) startPlayback(nowPlaying?.takeIf { current -> playlist.any { it.fileName == current.fileName } } ?: playlist.first(), true)
                 else Toast.makeText(context, "播放列表为空，请长按歌曲添加", Toast.LENGTH_SHORT).show()
             },
-            onStop = { stopPlayback() },
             onPrevious = {
                 if (playlist.isNotEmpty()) {
                     val index = playlist.indexOfFirst { it.fileName == nowPlaying?.fileName }
@@ -799,50 +798,119 @@ fun BottomBar(
     positionMs: Long,
     playMode: Int,
     speedLabel: String,
+    favorite: Boolean,
     onPlay: () -> Unit,
-    onStop: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onPlayMode: () -> Unit,
     onSpeed: () -> Unit,
     onPlaylist: () -> Unit,
+    onFavorite: () -> Unit,
+    onSeek: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = modifier.fillMaxWidth().height(62.dp),
+        modifier = modifier.fillMaxWidth().height(72.dp),
         color = PanelColor,
         border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
     ) {
         Column {
-            Box(Modifier.fillMaxWidth().height(3.dp).background(Color(0xFFABABAF))) {
+            Box(
+                Modifier.fillMaxWidth().height(7.dp).pointerInput(item?.fileName, item?.song?.durationMs) {
+                    detectTapGestures { offset -> onSeek((offset.x / size.width).coerceIn(0f, 1f)) }
+                },
+                contentAlignment = Alignment.CenterStart
+            ) {
                 val progress = if (item?.song?.durationMs ?: 0L > 0) (positionMs.toFloat() / item!!.song.durationMs).coerceIn(0f, 1f) else 0f
+                Box(Modifier.fillMaxWidth().height(3.dp).background(Color(0xFF545458)))
                 Box(Modifier.fillMaxWidth(progress).height(3.dp).background(AccentColor))
             }
             Row(
-                modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 18.dp, vertical = 6.dp),
+                modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 14.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-            Box(Modifier.size(42.dp).background(CardColor, RoundedCornerShape(6.dp)).border(1.dp, BorderColor, RoundedCornerShape(6.dp)), contentAlignment = Alignment.Center) {
-                Text("♪", color = AccentColor, fontSize = 20.sp)
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    val cover = remember(item?.coverBytes) {
+                        item?.coverBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+                    }
+                    Box(Modifier.size(46.dp).background(CardColor, RoundedCornerShape(7.dp)).border(1.dp, BorderColor, RoundedCornerShape(7.dp)), contentAlignment = Alignment.Center) {
+                        if (cover != null) Image(cover, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        else Text("♪", color = AccentColor, fontSize = 19.sp)
+                    }
+                    Spacer(Modifier.width(9.dp))
+                    Column(Modifier.width(155.dp)) {
+                        Text(item?.song?.name ?: "未有正在播放的歌曲", color = Color.White, fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (item != null) {
+                            Text(item.song.author ?: "未知作者", color = SecondaryText, fontSize = 9.sp, maxLines = 1)
+                            Text(item.song.transcribedBy ?: "未知创谱者", color = SecondaryText, fontSize = 9.sp, maxLines = 1)
+                        }
+                    }
+                    if (item != null) FavoriteStarIcon(favorite, Modifier.size(30.dp).clickable(onClick = onFavorite).padding(4.dp))
+                    Spacer(Modifier.weight(1f))
+                    TransportVector(if (playMode == 1) "repeat_one" else if (playMode == 2) "shuffle" else "repeat", Modifier.size(34.dp).clickable(onClick = onPlayMode).padding(4.dp))
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TransportVector("previous", Modifier.size(34.dp).clickable(onClick = onPrevious).padding(5.dp))
+                    Spacer(Modifier.width(8.dp))
+                    SMAPPlayButton(playing = playing && !paused, size = 52.dp, onClick = onPlay)
+                    Spacer(Modifier.width(8.dp))
+                    TransportVector("next", Modifier.size(34.dp).clickable(onClick = onNext).padding(5.dp))
+                }
+
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    TransportVector("list", Modifier.size(36.dp).clickable(onClick = onPlaylist).padding(7.dp))
+                    Spacer(Modifier.weight(1f))
+                    PlayerPill("音色:Piano") {}
+                    Spacer(Modifier.width(6.dp))
+                    PlayerPill("音高:0 C") {}
+                    Spacer(Modifier.width(6.dp))
+                    PlayerPill(speedLabel, onSpeed)
+                }
             }
-            Spacer(Modifier.width(10.dp))
-            Column {
-                Text(item?.song?.name ?: "未选择曲谱", color = Color.White, fontSize = 12.sp, maxLines = 1)
-                Text(
-                    item?.let { "BPM ${it.song.bpm} · ${it.song.songNotes.size} 音符" } ?: "请从曲库选择一首曲谱",
-                    color = SecondaryText,
-                    fontSize = 9.sp
-                )
+        }
+    }
+}
+
+@Composable
+private fun PlayerPill(label: String, onClick: () -> Unit) {
+    Text(
+        label,
+        color = SecondaryText,
+        fontSize = 9.sp,
+        modifier = Modifier.border(1.dp, BorderColor, RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 4.dp)
+    )
+}
+
+@Composable
+private fun TransportVector(type: String, modifier: Modifier = Modifier) {
+    val materialPath = remember(type) {
+        val data = when (type) {
+            "repeat" -> "M7 7h10v1.79c0 .45.54.67.85.35l2.79-2.79c.2-.2.2-.51 0-.71l-2.79-2.79c-.31-.31-.85-.09-.85.36V5H6c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1s1-.45 1-1V7zm10 10H7v-1.79c0-.45-.54-.67-.85-.35l-2.79 2.79c-.2.2-.2.51 0 .71l2.79 2.79c.31.31.85.09.85-.36V19h11c.55 0 1-.45 1-1v-4c0-.55-.45-1-1-1s-1 .45-1 1v3z"
+            "repeat_one" -> "M7 7h10v1.79c0 .45.54.67.85.35l2.79-2.79c.2-.2.2-.51 0-.71l-2.79-2.79c-.31-.31-.85-.09-.85.36V5H6c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1s1-.45 1-1V7zm10 10H7v-1.79c0-.45-.54-.67-.85-.35l-2.79 2.79c-.2.2-.2.51 0 .71l2.79 2.79c.31.31.85.09.85-.36V19h11c.55 0 1-.45 1-1v-4c0-.55-.45-1-1-1s-1 .45-1 1v3zm-4-2.75V9.81c0-.45-.36-.81-.81-.81-.13 0-.25.03-.36.09l-1.49.74c-.21.1-.34.32-.34.55 0 .34.28.62.62.62h.88v3.25c0 .41.34.75.75.75s.75-.34.75-.75z"
+            "shuffle" -> "M10.59 9.17L6.12 4.7c-.39-.39-1.02-.39-1.41 0-.39.39-.39 1.02 0 1.41l4.46 4.46 1.42-1.4zm4.76-4.32l1.19 1.19L4.7 17.88c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0L17.96 7.46l1.19 1.19c.31.31.85.09.85-.36V4.5c0-.28-.22-.5-.5-.5h-3.79c-.45 0-.67.54-.36.85zm-.52 8.56l-1.41 1.41 3.13 3.13-1.2 1.2c-.31.31-.09.85.36.85h3.79c.28 0 .5-.22.5-.5v-3.79c0-.45-.54-.67-.85-.35l-1.19 1.19-3.13-3.14z"
+            else -> null
+        }
+        data?.let { PathParser().parsePathString(it).toPath() }
+    }
+    Canvas(modifier) {
+        val stroke = Stroke(width = 2.2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
+        val color = if (type == "repeat_one" || type == "shuffle") AccentColor else Color(0xFFE1E1E6)
+        when (type) {
+            "previous", "next" -> {
+                val next = type == "next"
+                val barX = size.width * if (next) .78f else .22f
+                val pointX = size.width * if (next) .70f else .30f
+                val backX = size.width * if (next) .28f else .72f
+                drawLine(color, androidx.compose.ui.geometry.Offset(barX, size.height * .2f), androidx.compose.ui.geometry.Offset(barX, size.height * .8f), stroke.width)
+                val p = Path().apply { moveTo(pointX, size.height * .5f); lineTo(backX, size.height * .2f); lineTo(backX, size.height * .8f); close() }
+                drawPath(p, color)
             }
-            Spacer(Modifier.weight(1f))
-            Text(if (playMode == 1) "↻¹" else if (playMode == 2) "⤨" else "↻", color = Color.White, fontSize = 18.sp, modifier = Modifier.clickable(onClick = onPlayMode).padding(8.dp))
-            Text("◀", color = Color.White, fontSize = 18.sp, modifier = Modifier.clickable(onClick = onPrevious).padding(8.dp))
-            SMAPPlayButton(playing = playing && !paused, size = 52.dp, onClick = onPlay)
-            Text("■", color = SecondaryText, fontSize = 15.sp, modifier = Modifier.clickable(onClick = onStop).padding(8.dp))
-            Text("▶", color = Color.White, fontSize = 18.sp, modifier = Modifier.clickable(onClick = onNext).padding(8.dp))
-            Text("≡", color = Color.White, fontSize = 22.sp, modifier = Modifier.clickable(onClick = onPlaylist).padding(8.dp))
-            Spacer(Modifier.weight(1f))
-            Text("音色  ·  $speedLabel", color = SecondaryText, fontSize = 11.sp, modifier = Modifier.clickable(onClick = onSpeed).padding(8.dp))
+            "list" -> listOf(.25f, .5f, .75f).forEach { y -> drawLine(color, androidx.compose.ui.geometry.Offset(size.width * .18f, size.height * y), androidx.compose.ui.geometry.Offset(size.width * .82f, size.height * y), stroke.width) }
+            else -> materialPath?.let { path ->
+                scale(size.width / 24f, size.height / 24f, pivot = androidx.compose.ui.geometry.Offset.Zero) {
+                    drawPath(path, color)
+                }
             }
         }
     }
