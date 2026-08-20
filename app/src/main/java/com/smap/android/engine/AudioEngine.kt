@@ -8,7 +8,15 @@ import kotlin.math.pow
 /** 使用桌面版同一套 Piano 采样播放光遇 15 键音色。 */
 class AudioEngine(context: Context) {
     private val appContext = context.applicationContext
-    val instruments: List<String> = context.assets.list("instruments").orEmpty().sorted()
+    private val desktopOrder = listOf(
+        "Piano", "Harp", "Guitar", "Flute", "Ukulele", "Winter Piano", "Xylophone", "Electric Guitar",
+        "Bassoon", "Orff", "Kalimba", "Ocarina", "Cello", "Violin", "Saxophone", "Pipa", "Quena",
+        "Bugle", "Glock", "LightGuitar", "GoldPiano", "Horn", "Handpan", "GoldHandpan", "Dundun",
+        "APBell1", "APBell2", "Harmonica", "AP18Ocarina", "AP29Piccolo", "GoldBugle", "APPiano",
+        "4thAnnivArp", "4thAnnivLead", "Contrabass", "4thAnnivBass", "GoldDundun"
+    )
+    private val available = context.assets.list("instruments").orEmpty().toSet()
+    val instruments: List<String> = desktopOrder.filter { it in available }
     var currentInstrument: String = "Piano"
         private set
     var pitchSemitones: Int = 0

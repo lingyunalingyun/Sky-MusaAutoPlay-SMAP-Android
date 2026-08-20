@@ -100,6 +100,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
+import java.text.Collator
 
 // 与桌面版 SMAP 深色主题共用的视觉语言
 private val WindowColor = Color(0xFF121214)
@@ -189,7 +190,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
     var pendingMidis by remember { mutableStateOf<List<PendingMidi>>(emptyList()) }
     var navTab by remember { mutableIntStateOf(0) }
     var query by remember { mutableStateOf("") }
-    var ascending by remember { mutableStateOf(true) }
+    var sortMode by remember { mutableIntStateOf(0) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val repository = remember { SongRepository(context) }
     val preferences = remember { LibraryPreferences(context) }
@@ -258,6 +259,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
         items = withContext(Dispatchers.IO) { repository.loadSongs() }
     }
 
+    val nameComparator = remember { Comparator<LibraryItem> { a, b -> Collator.getInstance().compare(a.song.name, b.song.name) } }
     val visibleItems = items
         .asSequence()
         .filter { navTab != 2 || it.fileName in favorites }
@@ -265,8 +267,16 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
             query.isBlank() || it.song.name.contains(query, true) ||
                 it.song.author.orEmpty().contains(query, true) || it.fileName.contains(query, true)
         }
-        .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.song.name })
-        .let { if (ascending) it else it.toList().asReversed().asSequence() }
+        .let { source ->
+            when (sortMode) {
+                1 -> source.sortedWith(nameComparator.reversed())
+                2 -> source.sortedWith(Comparator { a, b ->
+                    val favoriteOrder = (b.fileName in favorites).compareTo(a.fileName in favorites)
+                    if (favoriteOrder != 0) favoriteOrder else nameComparator.compare(a, b)
+                })
+                else -> source.sortedWith(nameComparator)
+            }
+        }
         .toList()
 
     val playlist = playlistFiles.mapNotNull { fileName -> items.find { it.fileName == fileName } }
@@ -362,9 +372,9 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                     LibraryFilters(
                         query = query,
                         onQueryChange = { query = it },
-                        ascending = ascending,
+                        sortMode = sortMode,
                         onReset = { query = "" },
-                        onToggleSort = { ascending = !ascending }
+                        onToggleSort = { sortMode = (sortMode + 1) % 3 }
                     )
                     LazyColumn(
                         modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 6.dp, vertical = 5.dp)
@@ -563,10 +573,12 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
     }
 
     if (showInstrument) {
-        ChoiceDialog("选择音色", audioEngine.instruments, instrument, { showInstrument = false }) { selected ->
-            instrument = selected
-            pitch = preferences.pitch(selected)
-            preferences.saveInstrument(selected)
+        val options = audioEngine.instruments.map { "$it|${localizedInstrument(it)}" }
+        ChoiceDialog("选择音色", options, "$instrument|${localizedInstrument(instrument)}", { showInstrument = false }) { selected ->
+            val key = selected.substringBefore('|')
+            instrument = key
+            pitch = preferences.pitch(key)
+            preferences.saveInstrument(key)
             showInstrument = false
         }
     }
@@ -642,7 +654,7 @@ fun NavButton(label: String, active: Boolean, activeColor: Color, modifier: Modi
 fun LibraryFilters(
     query: String,
     onQueryChange: (String) -> Unit,
-    ascending: Boolean,
+    sortMode: Int,
     onReset: () -> Unit,
     onToggleSort: () -> Unit
 ) {
@@ -663,7 +675,7 @@ fun LibraryFilters(
         )
         Row(modifier = Modifier.fillMaxWidth()) {
             FilterChip("全部", Modifier.weight(1f), onReset)
-            FilterChip(if (ascending) "A - Z" else "Z - A", Modifier.weight(1f), onToggleSort)
+            FilterChip(when (sortMode) { 1 -> "名称 Z-A"; 2 -> "收藏优先"; else -> "名称 A-Z" }, Modifier.weight(1f), onToggleSort)
         }
     }
 }
@@ -896,7 +908,7 @@ fun BottomBar(
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     TransportVector("list", Modifier.size(36.dp).clickable(onClick = onPlaylist).padding(7.dp))
                     Spacer(Modifier.weight(1f))
-                    PlayerPill("音色:$instrumentLabel", onInstrument)
+                    PlayerPill("音色:${localizedInstrument(instrumentLabel)}", onInstrument)
                     Spacer(Modifier.width(6.dp))
                     PlayerPill("音高:${if (pitchLabel > 0) "+" else ""}$pitchLabel ${noteName(pitchLabel)}", onPitch)
                     Spacer(Modifier.width(6.dp))
