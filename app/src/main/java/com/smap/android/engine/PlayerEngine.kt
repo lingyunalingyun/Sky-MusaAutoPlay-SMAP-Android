@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 data class KeyPoint(val xRatio: Float, val yRatio: Float)
 
 /**
- * 自动弹琴播放引擎：后台协程按曲谱时间线调用无障碍服务点击琴键。
+ * 曲谱播放引擎：后台协程推进时间线，可选择是否通过无障碍点击琴键。
  * 支持 停止 / 实时倍速。
  */
 class PlayerEngine(private val scope: CoroutineScope) {
@@ -44,11 +44,12 @@ class PlayerEngine(private val scope: CoroutineScope) {
         keys: List<KeyPoint>,
         screenW: Int,
         screenH: Int,
+        sendScreenTaps: Boolean = true,
         onNoteFired: (Int) -> Unit = {},
         onFinished: () -> Unit = {}
     ) {
         stop()
-        if (!SMAPAccessibilityService.isEnabled()) {
+        if (sendScreenTaps && !SMAPAccessibilityService.isEnabled()) {
             onFinished()
             return
         }
@@ -63,7 +64,9 @@ class PlayerEngine(private val scope: CoroutineScope) {
                 if (!running) break
                 if (note.key in keys.indices) {
                     val k = keys[note.key]
-                    SMAPAccessibilityService.tap(k.xRatio * screenW, k.yRatio * screenH)
+                    if (sendScreenTaps) {
+                        SMAPAccessibilityService.tap(k.xRatio * screenW, k.yRatio * screenH)
+                    }
                     onNoteFired(note.key)
                 }
             }

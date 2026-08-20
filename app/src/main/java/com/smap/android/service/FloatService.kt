@@ -89,10 +89,12 @@ class FloatService : Service() {
         layout = KeyLayoutStore.load(this)
         songs = SongRepository(this).loadSongs()
         startForegroundCompat()
-        addBall()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (ballView == null) addBall()
+        return START_STICKY
+    }
 
     override fun onDestroy() {
         instance = null
@@ -156,7 +158,6 @@ class FloatService : Service() {
             x = 24
             y = 200
         }
-        tv.setOnClickListener { togglePanel() }
         tv.setOnTouchListener { v, e ->
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> {
@@ -215,11 +216,26 @@ class FloatService : Service() {
         }
 
         // 标题行
-        panel.addView(TextView(this).apply {
-            text = "🎹 SMAP 选曲"
-            setTextColor(Color.WHITE)
-            textSize = 17f
-            typeface = Typeface.DEFAULT_BOLD
+        panel.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(TextView(this@FloatService).apply {
+                text = "🎹 SMAP 选曲"
+                setTextColor(Color.WHITE)
+                textSize = 17f
+                typeface = Typeface.DEFAULT_BOLD
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(TextView(this@FloatService).apply {
+                text = "✕"
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                textSize = 20f
+                setPadding((12 * density).toInt(), 0, (4 * density).toInt(), 0)
+                setOnClickListener { hidePanel() }
+            }, LinearLayout.LayoutParams(
+                (48 * density).toInt(),
+                (40 * density).toInt()
+            ))
         })
 
         // 当前曲目

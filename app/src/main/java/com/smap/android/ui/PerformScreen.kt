@@ -3,6 +3,7 @@ package com.smap.android.ui
 import android.content.Intent
 import android.provider.Settings
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,7 +30,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -42,15 +42,19 @@ import com.smap.android.engine.KeyLayout
 import com.smap.android.engine.KeyLayoutStore
 import com.smap.android.engine.PlayerEngine
 import com.smap.android.model.SkySong
+import com.smap.android.service.FloatService
 import com.smap.android.service.SMAPAccessibilityService
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-private val AccentColor = Color(0xFF7DD3FC)
+private val AccentColor = Color(0xFF5AA0FF)
+private val WindowColor = Color(0xFF121214)
+private val PanelColor = Color(0xFF1C1C1C)
+private val BorderColor = Color(0xFF38383C)
 
 /** 演奏界面：15 键大键盘 + 自动弹琴控制 + 琴键校准 */
 @Composable
-fun PerformScreen(song: SkySong, onBack: () -> Unit) {
+fun PerformScreen(song: SkySong, onBack: () -> Unit, onGameModeChange: (Boolean) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -65,6 +69,7 @@ fun PerformScreen(song: SkySong, onBack: () -> Unit) {
     var activeKey by remember { mutableIntStateOf(-1) }
     var speed by remember { mutableFloatStateOf(1f) }
     var showCalib by remember { mutableStateOf(false) }
+    var gameMode by remember { mutableStateOf(FloatService.isRunning()) }
     val serviceEnabled = SMAPAccessibilityService.isEnabled()
     val engine = remember { PlayerEngine(scope) }
 
@@ -74,9 +79,10 @@ fun PerformScreen(song: SkySong, onBack: () -> Unit) {
             playing = false
             activeKey = -1
         } else {
-            if (!serviceEnabled) return
+            if (gameMode && !serviceEnabled) return
             engine.play(
                 song = song, keys = keys, screenW = screenW, screenH = screenH,
+                sendScreenTaps = gameMode,
                 onNoteFired = { k -> activeKey = k },
                 onFinished = { playing = false; activeKey = -1 }
             )
@@ -87,7 +93,7 @@ fun PerformScreen(song: SkySong, onBack: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.linearGradient(listOf(Color(0xFF0E0A1F), Color(0xFF1E1B4B), Color(0xFF302B63))))
+            .background(WindowColor)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // 顶栏
@@ -113,8 +119,41 @@ fun PerformScreen(song: SkySong, onBack: () -> Unit) {
                     )
                 }
                 Spacer(Modifier.weight(1f))
+                Surface(
+                    modifier = Modifier.clickable {
+                        if (playing) {
+                            engine.stop()
+                            playing = false
+                            activeKey = -1
+                        }
+                        gameMode = !gameMode
+                        onGameModeChange(gameMode)
+                    },
+                    shape = RoundedCornerShape(18.dp),
+                    color = if (gameMode) Color(0xFF2F6FD0) else PanelColor,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (gameMode) AccentColor else BorderColor)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 5.dp, bottom = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("游戏模式", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(34.dp)
+                                .height(20.dp)
+                                .background(if (gameMode) Color.White else Color(0xFF55555B), RoundedCornerShape(10.dp))
+                                .padding(2.dp),
+                            contentAlignment = if (gameMode) Alignment.CenterEnd else Alignment.CenterStart
+                        ) {
+                            Box(Modifier.size(16.dp).background(if (gameMode) AccentColor else Color(0xFFB7B7BC), RoundedCornerShape(8.dp)))
+                        }
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
                 // 无障碍状态
-                if (!serviceEnabled) {
+                if (gameMode && !serviceEnabled) {
                     Surface(
                         modifier = Modifier.clickable {
                             context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -124,9 +163,13 @@ fun PerformScreen(song: SkySong, onBack: () -> Unit) {
                     ) {
                         Text("⚠ 需开启无障碍", color = Color.White, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
                     }
-                } else {
+                } else if (gameMode) {
                     Surface(shape = RoundedCornerShape(12.dp), color = Color(0x3340B000)) {
                         Text("✓ 无障碍已开", color = Color(0xFFA3E635), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+                    }
+                } else {
+                    Surface(shape = RoundedCornerShape(12.dp), color = PanelColor) {
+                        Text("本地练习", color = Color(0xFF9A9AA1), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
                     }
                 }
             }
@@ -142,18 +185,21 @@ fun PerformScreen(song: SkySong, onBack: () -> Unit) {
                     val y = (kp.yRatio * screenH).roundToInt()
                     val w = (layout.keyW * screenW).roundToInt()
                     val h = (layout.keyH * screenH).roundToInt()
+                    val keyWidth = with(density) { w.toDp() }
+                    val keyHeight = with(density) { h.toDp() }
                     val isActive = idx == activeKey
                     Box(
                         modifier = Modifier
                             .offset { IntOffset(x - w / 2, y - h / 2) }
-                            .size(width = w.dp, height = h.dp)
+                            .size(width = keyWidth, height = keyHeight)
                             .background(
                                 color = when {
                                     isActive -> AccentColor
-                                    else -> Color(0x4D1E1B4B)
+                                    else -> PanelColor
                                 },
                                 shape = RoundedCornerShape(12.dp)
-                            ),
+                            )
+                            .border(1.dp, if (isActive) AccentColor else BorderColor, RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -174,21 +220,15 @@ fun PerformScreen(song: SkySong, onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
-                if (!serviceEnabled) {
+                if (gameMode && !serviceEnabled) {
                     Text("请先开启无障碍服务，然后切到光遇再点播放", color = Color(0xFFF59E0B), fontSize = 13.sp)
                 } else {
                     // 播放/停止
-                    Surface(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clickable(onClick = { togglePlay() }),
-                        shape = RoundedCornerShape(50),
-                        color = if (playing) Color(0x66EF4444) else AccentColor
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(if (playing) "⏹" else "▶", fontSize = 26.sp, color = if (playing) Color.White else Color(0xFF0E0A1F))
-                        }
-                    }
+                    SMAPPlayButton(
+                        playing = playing,
+                        size = 64.dp,
+                        onClick = { togglePlay() }
+                    )
                     Spacer(Modifier.width(16.dp))
                     // 倍速
                     Surface(
@@ -243,7 +283,7 @@ fun CalibrationPanel(
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
         shape = RoundedCornerShape(14.dp),
-        color = Color(0xE61A1738)
+        color = PanelColor
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

@@ -1,11 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- 简化的音符图形：两个八分音符 -->
-    <path
-        android:fillColor="#7DD3FC"
-        android:pathData="M42,32 L42,68 A9,9 0 1 0 49,74 L49,38 L68,31 L68,62 A9,9 0 1 0 75,68 L75,25 Z" />
-</vector>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <bitmap
+            android:gravity="fill"
+            android:src="@drawable/ic_launcher_logo" />
+    </item>
+</layer-list>
