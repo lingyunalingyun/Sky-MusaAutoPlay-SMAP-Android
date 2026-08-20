@@ -47,6 +47,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
@@ -199,6 +201,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
     var playMode by remember { mutableIntStateOf(preferences.playMode()) }
     var speed by remember { mutableStateOf(preferences.speed()) }
     var randomSpeed by remember { mutableStateOf(preferences.randomSpeed()) }
+    var cave by remember { mutableStateOf(preferences.cave()) }
     var playToken by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     val audioEngine = remember { AudioEngine(context) }
@@ -210,6 +213,8 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
         withContext(Dispatchers.IO) { audioEngine.setInstrument(instrument) }
         audioEngine.setPitch(pitch)
     }
+
+    LaunchedEffect(cave) { withContext(Dispatchers.IO) { audioEngine.setCave(cave) } }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -416,6 +421,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
 
             RightPanel(
                 keyFlashes = keyFlashes,
+                pitch = pitch,
                 onKeyPress = { key ->
                     audioEngine.play(key)
                     keyFlashes[key]++
@@ -432,6 +438,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
             speedLabel = if (randomSpeed) "随机速度" else "${speed}×",
             instrumentLabel = instrument,
             pitchLabel = pitch,
+            cave = cave,
             favorite = (nowPlaying ?: selectedItem)?.fileName in favorites,
             onPlay = {
                 if (isPlaying && !isPaused) {
@@ -463,6 +470,10 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
             onSpeed = { showSpeed = true },
             onInstrument = { showInstrument = true },
             onPitch = { showPitch = true },
+            onCave = {
+                cave = !cave
+                preferences.saveCave(cave)
+            },
             onPlaylist = { showPlaylist = true },
             onFavorite = {
                 (nowPlaying ?: selectedItem)?.let { favorites = preferences.toggleFavorite(it.fileName) }
@@ -758,7 +769,12 @@ fun EmptyMessage(message: String) {
 }
 
 @Composable
-fun RightPanel(keyFlashes: List<Int> = List(15) { 0 }, onKeyPress: (Int) -> Unit = {}, modifier: Modifier = Modifier) {
+fun RightPanel(
+    keyFlashes: List<Int> = List(15) { 0 },
+    pitch: Int = 0,
+    onKeyPress: (Int) -> Unit = {},
+    modifier: Modifier = Modifier
+) {
     Column(
         modifier = modifier
             .fillMaxHeight()
@@ -767,12 +783,12 @@ fun RightPanel(keyFlashes: List<Int> = List(15) { 0 }, onKeyPress: (Int) -> Unit
             .padding(12.dp)
     ) {
         Spacer(Modifier.height(4.dp))
-        val labels = listOf("YUIOP", "HJKL;", "NM,./")
-        labels.forEachIndexed { rowIndex, row ->
+        val scaleSemitones = intArrayOf(0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24)
+        repeat(3) { rowIndex ->
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                row.forEachIndexed { columnIndex, key ->
+                repeat(5) { columnIndex ->
                     val keyIndex = rowIndex * 5 + columnIndex
-                    KeyboardKey(key.toString(), keyFlashes[keyIndex], { onKeyPress(keyIndex) }, Modifier.weight(1f))
+                    KeyboardKey(noteName(scaleSemitones[keyIndex] + pitch), keyFlashes[keyIndex], { onKeyPress(keyIndex) }, Modifier.weight(1f))
                 }
             }
             if (rowIndex < 2) Spacer(Modifier.height(10.dp))
@@ -843,6 +859,7 @@ fun BottomBar(
     speedLabel: String,
     instrumentLabel: String,
     pitchLabel: Int,
+    cave: Boolean,
     favorite: Boolean,
     onPlay: () -> Unit,
     onPrevious: () -> Unit,
@@ -851,26 +868,41 @@ fun BottomBar(
     onSpeed: () -> Unit,
     onInstrument: () -> Unit,
     onPitch: () -> Unit,
+    onCave: () -> Unit,
     onPlaylist: () -> Unit,
     onFavorite: () -> Unit,
     onSeek: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = modifier.fillMaxWidth().height(72.dp),
+        modifier = modifier.fillMaxWidth().height(82.dp),
         color = PanelColor,
         border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
     ) {
         Column {
-            Box(
-                Modifier.fillMaxWidth().height(7.dp).pointerInput(item?.fileName, item?.song?.durationMs) {
-                    detectTapGestures { offset -> onSeek((offset.x / size.width).coerceIn(0f, 1f)) }
-                },
-                contentAlignment = Alignment.CenterStart
+            val durationMs = item?.song?.durationMs ?: 0L
+            val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+            Row(
+                Modifier.fillMaxWidth().height(18.dp).padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                val progress = if (item?.song?.durationMs ?: 0L > 0) (positionMs.toFloat() / item!!.song.durationMs).coerceIn(0f, 1f) else 0f
-                Box(Modifier.fillMaxWidth().height(3.dp).background(Color(0xFF545458)))
-                Box(Modifier.fillMaxWidth(progress).height(3.dp).background(AccentColor))
+                Text(if (item == null) "0:00" else formatPlaybackTime(positionMs), color = SecondaryText, fontSize = 9.sp, modifier = Modifier.width(32.dp))
+                Canvas(
+                    Modifier.weight(1f).fillMaxHeight().pointerInput(item?.fileName, durationMs) {
+                        detectTapGestures { offset -> if (durationMs > 0) onSeek((offset.x / size.width).coerceIn(0f, 1f)) }
+                    }
+                ) {
+                    val centerY = size.height / 2f
+                    val radius = 4.dp.toPx()
+                    val thumbX = (size.width * progress).coerceIn(radius, size.width - radius)
+                    drawLine(Color(0xFF545458), androidx.compose.ui.geometry.Offset(0f, centerY), androidx.compose.ui.geometry.Offset(size.width, centerY), 3.dp.toPx())
+                    drawLine(AccentColor, androidx.compose.ui.geometry.Offset(0f, centerY), androidx.compose.ui.geometry.Offset(thumbX, centerY), 3.dp.toPx())
+                    if (item != null) {
+                        drawCircle(Color.White, radius, androidx.compose.ui.geometry.Offset(thumbX, centerY))
+                        drawCircle(Color(0x55000000), radius, androidx.compose.ui.geometry.Offset(thumbX, centerY), style = Stroke(1.dp.toPx()))
+                    }
+                }
+                Text(if (item == null) "0:00" else formatPlaybackTime(durationMs), color = SecondaryText, fontSize = 9.sp, modifier = Modifier.width(32.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
             }
             Row(
                 modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 14.dp, vertical = 5.dp),
@@ -908,6 +940,8 @@ fun BottomBar(
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     TransportVector("list", Modifier.size(36.dp).clickable(onClick = onPlaylist).padding(7.dp))
                     Spacer(Modifier.weight(1f))
+                    TransportVector("cave", Modifier.size(32.dp).clickable(onClick = onCave).padding(5.dp), cave)
+                    Spacer(Modifier.width(4.dp))
                     PlayerPill("音色:${localizedInstrument(instrumentLabel)}", onInstrument)
                     Spacer(Modifier.width(6.dp))
                     PlayerPill("音高:${if (pitchLabel > 0) "+" else ""}$pitchLabel ${noteName(pitchLabel)}", onPitch)
@@ -930,19 +964,20 @@ private fun PlayerPill(label: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun TransportVector(type: String, modifier: Modifier = Modifier) {
+private fun TransportVector(type: String, modifier: Modifier = Modifier, active: Boolean = false) {
     val materialPath = remember(type) {
         val data = when (type) {
             "repeat" -> "M7 7h10v1.79c0 .45.54.67.85.35l2.79-2.79c.2-.2.2-.51 0-.71l-2.79-2.79c-.31-.31-.85-.09-.85.36V5H6c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1s1-.45 1-1V7zm10 10H7v-1.79c0-.45-.54-.67-.85-.35l-2.79 2.79c-.2.2-.2.51 0 .71l2.79 2.79c.31.31.85.09.85-.36V19h11c.55 0 1-.45 1-1v-4c0-.55-.45-1-1-1s-1 .45-1 1v3z"
             "repeat_one" -> "M7 7h10v1.79c0 .45.54.67.85.35l2.79-2.79c.2-.2.2-.51 0-.71l-2.79-2.79c-.31-.31-.85-.09-.85.36V5H6c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1s1-.45 1-1V7zm10 10H7v-1.79c0-.45-.54-.67-.85-.35l-2.79 2.79c-.2.2-.2.51 0 .71l2.79 2.79c.31.31.85.09.85-.36V19h11c.55 0 1-.45 1-1v-4c0-.55-.45-1-1-1s-1 .45-1 1v3zm-4-2.75V9.81c0-.45-.36-.81-.81-.81-.13 0-.25.03-.36.09l-1.49.74c-.21.1-.34.32-.34.55 0 .34.28.62.62.62h.88v3.25c0 .41.34.75.75.75s.75-.34.75-.75z"
             "shuffle" -> "M10.59 9.17L6.12 4.7c-.39-.39-1.02-.39-1.41 0-.39.39-.39 1.02 0 1.41l4.46 4.46 1.42-1.4zm4.76-4.32l1.19 1.19L4.7 17.88c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0L17.96 7.46l1.19 1.19c.31.31.85.09.85-.36V4.5c0-.28-.22-.5-.5-.5h-3.79c-.45 0-.67.54-.36.85zm-.52 8.56l-1.41 1.41 3.13 3.13-1.2 1.2c-.31.31-.09.85.36.85h3.79c.28 0 .5-.22.5-.5v-3.79c0-.45-.54-.67-.85-.35l-1.19 1.19-3.13-3.14z"
+            "cave" -> "M2 20L8 9L12 15L15 10L22 20Z"
             else -> null
         }
         data?.let { PathParser().parsePathString(it).toPath() }
     }
     Canvas(modifier) {
         val stroke = Stroke(width = 2.2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
-        val color = if (type == "repeat_one" || type == "shuffle") AccentColor else Color(0xFFE1E1E6)
+        val color = if (active || type == "repeat_one" || type == "shuffle") AccentColor else Color(0xFFE1E1E6)
         when (type) {
             "previous", "next" -> {
                 val next = type == "next"
@@ -1338,27 +1373,41 @@ fun SpeedDialog(
     onSelect: (Float, Boolean) -> Unit
 ) {
     val speeds = listOf(2f, 1.75f, 1.5f, 1.25f, 1f, 0.75f, 0.5f)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = PanelColor,
-        title = { Text("播放速度", color = Color.White) },
-        text = {
-            LazyColumn(Modifier.heightIn(max = 320.dp)) {
-                item {
-                    TextButton(onClick = { onSelect(speed, true) }) {
-                        Text(if (random) "✓ 随机速度" else "随机速度")
-                    }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.52f),
+            shape = RoundedCornerShape(12.dp),
+            color = PanelColor,
+            border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
+        ) {
+            Column(Modifier.padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("播放速度", color = Color.White, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) { Text("关闭") }
                 }
-                items(speeds) { value ->
-                    TextButton(onClick = { onSelect(value, false) }) {
-                        val label = if (!random && speed == value) "✓ ${value}×" else "${value}×"
-                        Text(label)
+                val options = listOf<Pair<String, () -> Unit>>(
+                    (if (random) "✓ 随机速度" else "随机速度") to { onSelect(speed, true) }
+                ) + speeds.map { value ->
+                    (if (!random && speed == value) "✓ ${value}×" else "${value}×") to { onSelect(value, false) }
+                }
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(4),
+                    modifier = Modifier.fillMaxWidth().height(84.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(options.size) { index ->
+                        val active = options[index].first.startsWith("✓")
+                        TextButton(
+                            onClick = options[index].second,
+                            modifier = Modifier.fillMaxWidth().height(40.dp)
+                                .background(if (active) AccentColor.copy(alpha = 0.22f) else CardColor, RoundedCornerShape(7.dp))
+                        ) { Text(options[index].first, maxLines = 1) }
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
-    )
+        }
+    }
 }
 
 @Composable
@@ -1369,26 +1418,76 @@ private fun ChoiceDialog(
     onDismiss: () -> Unit,
     onSelect: (String) -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = PanelColor,
-        title = { Text(title, color = Color.White) },
-        text = {
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
-                items(options) { option ->
-                    val display = option.substringAfter('|', option)
-                    TextButton(onClick = { onSelect(option) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (option == selected) "✓ $display" else display, modifier = Modifier.fillMaxWidth())
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.62f).heightIn(max = 350.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = PanelColor,
+            border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
+        ) {
+            Column(Modifier.padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, color = Color.White, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) { Text("关闭") }
+                }
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 118.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(options.size) { index ->
+                        val option = options[index]
+                        val display = option.substringAfter('|', option)
+                        val active = option == selected
+                        TextButton(
+                            onClick = { onSelect(option) },
+                            modifier = Modifier.fillMaxWidth().height(40.dp)
+                                .background(if (active) AccentColor.copy(alpha = 0.22f) else CardColor, RoundedCornerShape(7.dp))
+                        ) {
+                            Text(if (active) "✓ $display" else display, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
-    )
+        }
+    }
 }
 
 private fun noteName(semitones: Int): String =
     listOf("C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B")[(semitones % 12 + 12) % 12]
+
+private fun localizedInstrument(key: String): String {
+    val names = mapOf(
+        "Piano" to arrayOf("钢琴", "鋼琴", "Piano", "ピアノ"), "Harp" to arrayOf("竖琴", "豎琴", "Harp", "ハープ"),
+        "Guitar" to arrayOf("吉他", "吉他", "Guitar", "ギター"), "Flute" to arrayOf("长笛", "長笛", "Flute", "フルート"),
+        "Ukulele" to arrayOf("尤克里里", "烏克麗麗", "Ukulele", "ウクレレ"), "Winter Piano" to arrayOf("冬季钢琴", "冬季鋼琴", "Winter Piano", "ウィンターピアノ"),
+        "Xylophone" to arrayOf("木琴", "木琴", "Xylophone", "シロフォン"), "Electric Guitar" to arrayOf("电吉他", "電吉他", "Electric Guitar", "エレキギター"),
+        "Bassoon" to arrayOf("巴松管", "巴松管", "Bassoon", "ファゴット"), "Orff" to arrayOf("奥尔夫", "奧爾夫", "Orff", "オルフ"),
+        "Kalimba" to arrayOf("卡林巴", "卡林巴", "Kalimba", "カリンバ"), "Ocarina" to arrayOf("陶笛", "陶笛", "Ocarina", "オカリナ"),
+        "Cello" to arrayOf("大提琴", "大提琴", "Cello", "チェロ"), "Violin" to arrayOf("小提琴", "小提琴", "Violin", "ヴァイオリン"),
+        "Saxophone" to arrayOf("萨克斯", "薩克斯", "Saxophone", "サックス"), "Pipa" to arrayOf("琵琶", "琵琶", "Pipa", "ピパ"),
+        "Quena" to arrayOf("盖那笛", "蓋那笛", "Quena", "ケーナ"), "Bugle" to arrayOf("军号", "軍號", "Bugle", "ビューグル"),
+        "Glock" to arrayOf("钟琴", "鐘琴", "Glockenspiel", "グロッケン"), "LightGuitar" to arrayOf("轻吉他", "輕吉他", "Light Guitar", "ライトギター"),
+        "GoldPiano" to arrayOf("金钢琴", "金鋼琴", "Gold Piano", "ゴールドピアノ"), "Horn" to arrayOf("圆号", "圓號", "Horn", "ホルン"),
+        "Handpan" to arrayOf("手碟", "手碟", "Handpan", "ハンドパン"), "GoldHandpan" to arrayOf("金手碟", "金手碟", "Gold Handpan", "ゴールドハンドパン"),
+        "Dundun" to arrayOf("邓杜鼓", "鄧杜鼓", "Dundun", "ドゥンドゥン"), "APBell1" to arrayOf("铃1", "鈴1", "AP Bell 1", "ベル1"),
+        "APBell2" to arrayOf("铃2", "鈴2", "AP Bell 2", "ベル2"), "Harmonica" to arrayOf("口琴", "口琴", "Harmonica", "ハーモニカ"),
+        "AP18Ocarina" to arrayOf("陶笛Ⅱ", "陶笛Ⅱ", "Ocarina II", "オカリナⅡ"), "AP29Piccolo" to arrayOf("短笛", "短笛", "Piccolo", "ピッコロ"),
+        "GoldBugle" to arrayOf("金军号", "金軍號", "Gold Bugle", "ゴールドビューグル"), "APPiano" to arrayOf("AP钢琴", "AP鋼琴", "AP Piano", "APピアノ"),
+        "4thAnnivArp" to arrayOf("四周年·琶音", "四週年·琶音", "4th Anniv Arp", "4周年アルペジオ"), "4thAnnivLead" to arrayOf("四周年·主音", "四週年·主音", "4th Anniv Lead", "4周年リード"),
+        "Contrabass" to arrayOf("低音提琴", "低音提琴", "Contrabass", "コントラバス"), "4thAnnivBass" to arrayOf("四周年·贝斯", "四週年·貝斯", "4th Anniv Bass", "4周年ベース"),
+        "GoldDundun" to arrayOf("金邓杜鼓", "金鄧杜鼓", "Gold Dundun", "ゴールドドゥンドゥン")
+    )
+    val locale = java.util.Locale.getDefault()
+    val index = when {
+        locale.language == "ja" -> 3
+        locale.language == "en" -> 2
+        locale.language == "zh" && (locale.script == "Hant" || locale.country in setOf("TW", "HK", "MO")) -> 1
+        else -> 0
+    }
+    return names[key]?.get(index) ?: key
+}
 
 /** 曲谱详情 */
 @Composable
@@ -1433,4 +1532,9 @@ private fun formatDuration(ms: Long): String {
     val m = totalSec / 60
     val s = totalSec % 60
     return "%d:%02d".format(m, s)
+}
+
+private fun formatPlaybackTime(ms: Long): String {
+    val totalSec = ms.coerceAtLeast(0) / 1000
+    return "%d:%02d".format(totalSec / 60, totalSec % 60)
 }

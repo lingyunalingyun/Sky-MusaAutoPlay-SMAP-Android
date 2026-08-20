@@ -48,6 +48,10 @@ class LibraryPreferences(context: Context) {
         prefs.edit().putInt("pitch_$instrument", semitones.coerceIn(-24, 24)).apply()
     }
 
+    fun cave(): Boolean = prefs.getBoolean("cave", false)
+
+    fun saveCave(enabled: Boolean) { prefs.edit().putBoolean("cave", enabled).apply() }
+
     private fun defaultPitch(instrument: String): Int = when (instrument) {
         "Cello", "Horn", "Handpan", "GoldHandpan", "Dundun", "APBell1", "APBell2" -> -12
         "Contrabass", "4thAnnivBass", "GoldDundun" -> -24

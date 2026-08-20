@@ -21,6 +21,7 @@ class AudioEngine(context: Context) {
         private set
     var pitchSemitones: Int = 0
         private set
+    private var caveEnabled = false
 
     private var soundPool = createPool()
     private var sounds = loadSounds(currentInstrument)
@@ -35,9 +36,16 @@ class AudioEngine(context: Context) {
         )
         .build()
 
-    private fun loadSounds(instrument: String) = IntArray(15) { key ->
-        appContext.assets.openFd("instruments/$instrument/$key.wav").use { descriptor ->
-            soundPool.load(descriptor, 1)
+    private fun loadSounds(instrument: String): IntArray {
+        val caveFiles = if (caveEnabled) CaveRenderer.renderAll(appContext, instrument) else null
+        return IntArray(15) { key ->
+            if (caveFiles != null) {
+                soundPool.load(caveFiles[key].absolutePath, 1)
+            } else {
+                appContext.assets.openFd("instruments/$instrument/$key.wav").use { descriptor ->
+                    soundPool.load(descriptor, 1)
+                }
+            }
         }
     }
 
@@ -58,8 +66,19 @@ class AudioEngine(context: Context) {
 
     fun setPitch(semitones: Int) { pitchSemitones = semitones.coerceIn(-24, 24) }
 
+    @Synchronized
+    fun setCave(enabled: Boolean) {
+        if (enabled == caveEnabled) return
+        soundPool.release()
+        soundPool = createPool()
+        caveEnabled = enabled
+        sounds = loadSounds(currentInstrument)
+    }
+
     fun stopAll() = soundPool.autoPause()
 
     @Synchronized
-    fun release() = soundPool.release()
+    fun release() {
+        soundPool.release()
+    }
 }
