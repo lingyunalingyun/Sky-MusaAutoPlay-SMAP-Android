@@ -16,8 +16,11 @@ class SongRepository(private val context: Context) {
     private val importedDir = File(context.filesDir, "songs")
 
     fun loadSongs(): List<LibraryItem> {
+        val importedFiles = importedDir.listFiles().orEmpty().filter { it.isFile && supported(it.name) }
+        val importedNames = importedFiles.map { it.name }.toSet()
         val bundled = (assets.list("songs") ?: emptyArray())
             .filter { it.endsWith(".txt") || it.endsWith(".json") || it.endsWith(".mid") || it.endsWith(".midi") }
+            .filterNot { it in importedNames }
             .mapNotNull { f ->
                 runCatching {
                     val bytes = assets.open("songs/$f").readBytes()
@@ -25,9 +28,7 @@ class SongRepository(private val context: Context) {
                     if (song != null) LibraryItem(f, song) else null
                 }.getOrNull()
             }
-        val imported = importedDir.listFiles()
-            .orEmpty()
-            .filter { it.isFile && supported(it.name) }
+        val imported = importedFiles
             .mapNotNull { file ->
                 runCatching {
                     val song = parse(file.name, file.readBytes())
@@ -44,8 +45,24 @@ class SongRepository(private val context: Context) {
             ?: error("无法读取文件")
         val song = parse(displayName, bytes) ?: error("曲谱格式无效或没有可用音符")
         importedDir.mkdirs()
-        val target = uniqueFile(displayName)
+        val target = File(importedDir, displayName)
         target.writeBytes(bytes)
+        LibraryItem(target.name, song)
+    }
+
+    fun importMidi(
+        bytes: ByteArray,
+        name: String,
+        selectedTracks: Set<Int>,
+        autoAlign: Boolean,
+        octaveShift: Int
+    ): Result<LibraryItem> = runCatching {
+        val song = MidiImporter.convert(bytes, name, selectedTracks, autoAlign, octaveShift)
+            ?: error("MIDI 文件中没有可用音符")
+        require(song.songNotes.isNotEmpty()) { "MIDI 文件中没有可用音符" }
+        importedDir.mkdirs()
+        val target = uniqueFile("$name.json")
+        target.writeText(song.toJson(), Charsets.UTF_8)
         LibraryItem(target.name, song)
     }
 

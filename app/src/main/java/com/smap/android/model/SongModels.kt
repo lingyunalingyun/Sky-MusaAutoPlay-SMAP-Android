@@ -30,6 +30,23 @@ data class SkySong(
     val durationMs: Long
         get() = songNotes.maxOfOrNull { it.time }?.toLong() ?: 0L
 
+    fun toJson(): String {
+        val notes = JSONArray()
+        songNotes.forEach { notes.put(JSONObject().put("time", it.time).put("key", "1Key${it.key}")) }
+        val song = JSONObject()
+            .put("name", name)
+            .put("author", author.orEmpty())
+            .put("transcribedBy", transcribedBy.orEmpty())
+            .put("isComposed", isComposed)
+            .put("bpm", bpm)
+            .put("bitsPerPage", bitsPerPage)
+            .put("pitchLevel", pitchLevel)
+            .put("isEncrypted", isEncrypted)
+            .put("keyCount", keyCount)
+            .put("songNotes", notes)
+        return JSONArray().put(song).toString()
+    }
+
     companion object {
         /** 解析 Sky 曲谱文本（JSON 数组格式），失败返回 null */
         fun parse(text: String): SkySong? {

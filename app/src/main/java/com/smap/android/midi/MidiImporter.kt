@@ -118,7 +118,7 @@ object MidiImporter {
         return SkySong(
             name = name,
             author = null,
-            transcribedBy = "MIDI导入",
+            transcribedBy = "SMAP MIDI Import",
             bpm = bpm.coerceIn(1, 999),
             bitsPerPage = 16,
             pitchLevel = 0,
