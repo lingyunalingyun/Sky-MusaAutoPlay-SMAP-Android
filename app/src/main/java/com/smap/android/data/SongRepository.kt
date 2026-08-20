@@ -3,12 +3,14 @@ package com.smap.android.data
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Base64
 import com.smap.android.midi.MidiImporter
 import com.smap.android.model.SkySong
 import java.io.File
+import org.json.JSONArray
 
 /** 曲库条目：文件名 + 解析出的曲谱 */
-data class LibraryItem(val fileName: String, val song: SkySong)
+data class LibraryItem(val fileName: String, val song: SkySong, val coverBytes: ByteArray? = null)
 
 /** 本地曲库：从 assets/songs 读取曲谱，支持 JSON / TXT / MIDI 三种格式 */
 class SongRepository(private val context: Context) {
@@ -28,14 +30,14 @@ class SongRepository(private val context: Context) {
                 runCatching {
                     val bytes = assets.open("songs/$f").readBytes()
                     val song = parse(f, bytes)
-                    if (song != null) LibraryItem(f, song) else null
+                    if (song != null) LibraryItem(f, song, extractCover(f, bytes)) else null
                 }.getOrNull()
             }
         val imported = importedFiles.filterNot { it.name in hidden }
             .mapNotNull { file ->
                 runCatching {
                     val song = parse(file.name, file.readBytes())
-                    if (song != null) LibraryItem(file.name, song) else null
+                    if (song != null) LibraryItem(file.name, song, extractCover(file.name, file.readBytes())) else null
                 }.getOrNull()
             }
         return (bundled + imported).sortedBy { it.song.name.lowercase() }
@@ -51,7 +53,7 @@ class SongRepository(private val context: Context) {
         val target = File(importedDir, displayName)
         target.writeBytes(bytes)
         unhide(target.name)
-        LibraryItem(target.name, song)
+        LibraryItem(target.name, song, extractCover(target.name, bytes))
     }
 
     fun importMidi(
@@ -93,6 +95,18 @@ class SongRepository(private val context: Context) {
     private fun supported(name: String): Boolean =
         name.endsWith(".txt", true) || name.endsWith(".json", true) ||
             name.endsWith(".mid", true) || name.endsWith(".midi", true)
+
+    private fun extractCover(fileName: String, bytes: ByteArray): ByteArray? {
+        if (fileName.endsWith(".mid", true) || fileName.endsWith(".midi", true)) return null
+        return runCatching {
+            val text = decodeText(bytes)
+            if (!text.contains("\"cover\"")) return null
+            val array = JSONArray(text)
+            var encoded = array.optJSONObject(0)?.optString("cover").orEmpty()
+            if (encoded.startsWith("data:")) encoded = encoded.substringAfter(',')
+            encoded.takeIf { it.isNotBlank() }?.let { Base64.decode(it, Base64.DEFAULT) }
+        }.getOrNull()
+    }
 
     private fun queryName(uri: Uri): String {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->

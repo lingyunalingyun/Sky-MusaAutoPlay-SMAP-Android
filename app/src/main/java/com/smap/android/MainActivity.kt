@@ -1,6 +1,7 @@
 package com.smap.android
 
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -25,6 +26,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -67,13 +69,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -254,7 +260,11 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
 
     val playlist = playlistFiles.mapNotNull { fileName -> items.find { it.fileName == fileName } }
 
-    fun startPlayback(item: LibraryItem, fromPlaylist: Boolean) {
+    fun startPlayback(
+        item: LibraryItem,
+        fromPlaylist: Boolean,
+        queueSnapshot: List<LibraryItem> = playlist
+    ) {
         val token = ++playToken
         playerEngine.stop()
         audioEngine.stopAll()
@@ -283,18 +293,28 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                     if (fromPlaylist) {
                         val next = when (playMode) {
                             1 -> item
-                            2 -> if (playlist.size <= 1) playlist.firstOrNull() else playlist.filterNot { it.fileName == item.fileName }.random(Random)
-                            else -> playlist.getOrNull((playlist.indexOfFirst { it.fileName == item.fileName } + 1).coerceAtLeast(0) % playlist.size.coerceAtLeast(1))
+                            2 -> if (queueSnapshot.size <= 1) queueSnapshot.firstOrNull() else queueSnapshot.filterNot { it.fileName == item.fileName }.random(Random)
+                            else -> queueSnapshot.getOrNull((queueSnapshot.indexOfFirst { it.fileName == item.fileName } + 1).coerceAtLeast(0) % queueSnapshot.size.coerceAtLeast(1))
                         }
                         isPlaying = false
                         delay(2_000)
-                        if (next != null && token == playToken) startPlayback(next, true)
+                        if (next != null && token == playToken) startPlayback(next, true, queueSnapshot)
                     } else {
                         isPlaying = false
                     }
                 }
             }
         )
+    }
+
+    fun addToPlaylistAndPlay(item: LibraryItem) {
+        val updatedFiles = if (item.fileName in playlistFiles) playlistFiles else playlistFiles + item.fileName
+        if (updatedFiles !== playlistFiles) {
+            playlistFiles = updatedFiles
+            preferences.savePlaylist(updatedFiles)
+        }
+        val updatedQueue = updatedFiles.mapNotNull { fileName -> items.find { it.fileName == fileName } }
+        startPlayback(item, true, updatedQueue)
     }
 
     fun stopPlayback() {
@@ -342,10 +362,19 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                                 selected = nowPlaying?.fileName == item.fileName,
                                 favorite = item.fileName in favorites,
                                 onFavorite = { favorites = preferences.toggleFavorite(item.fileName) },
-                                onClick = { startPlayback(item, false) },
+                                onAdd = {
+                                    if (item.fileName !in playlistFiles) {
+                                        playlistFiles = playlistFiles + item.fileName
+                                        preferences.savePlaylist(playlistFiles)
+                                        Toast.makeText(context, "已加入播放列表「${item.song.name}」", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "「${item.song.name}」已在播放列表", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                onClick = { addToPlaylistAndPlay(item) },
                                 onLongClick = { moreItem = item }
                             )
-                            Spacer(Modifier.height(6.dp))
+                            Spacer(Modifier.height(2.dp))
                         }
                         if (visibleItems.isEmpty()) {
                             item { EmptyMessage(if (navTab == 2) "还没有收藏曲谱" else "没有匹配的曲谱") }
@@ -417,7 +446,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
             favorite = item.fileName in favorites,
             inPlaylist = item.fileName in playlistFiles,
             onDismiss = { moreItem = null },
-            onPlay = { moreItem = null; startPlayback(item, false) },
+            onPlay = { moreItem = null; addToPlaylistAndPlay(item) },
             onFavorite = { favorites = preferences.toggleFavorite(item.fileName); moreItem = null },
             onAddPlaylist = {
                 if (item.fileName !in playlistFiles) {
@@ -465,8 +494,12 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
         PlaylistDialog(
             items = playlist,
             nowPlaying = nowPlaying,
+            playing = isPlaying,
+            paused = isPaused,
+            favorites = favorites,
             onDismiss = { showPlaylist = false },
             onPlay = { startPlayback(it, true) },
+            onFavorite = { favorites = preferences.toggleFavorite(it.fileName) },
             onRemove = { item ->
                 playlistFiles = playlistFiles - item.fileName
                 preferences.savePlaylist(playlistFiles)
@@ -602,54 +635,57 @@ fun SongCard(
     selected: Boolean,
     favorite: Boolean,
     onFavorite: () -> Unit,
+    onAdd: () -> Unit,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
     val song = item.song
+    val cover = remember(item.coverBytes) {
+        item.coverBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+    }
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .height(62.dp)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        shape = RoundedCornerShape(10.dp),
-        color = CardColor,
-        border = androidx.compose.foundation.BorderStroke(1.dp, if (selected) AccentColor else BorderColor)
+        shape = RoundedCornerShape(5.dp),
+        color = if (selected) Color(0xFF454552) else Color.Transparent
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(42.dp)
+                    .size(46.dp)
                     .background(PanelColor, RoundedCornerShape(6.dp))
                     .border(1.dp, BorderColor, RoundedCornerShape(6.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Text("♪", color = AccentColor, fontSize = 22.sp)
+                if (cover != null) {
+                    Image(cover, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                } else {
+                    Text("♪", color = SecondaryText, fontSize = 20.sp)
+                }
             }
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(song.name, color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    "BPM ${song.bpm} · ${song.songNotes.size} 音符" +
-                        (song.author?.let { " · $it" } ?: ""),
-                    color = SecondaryText,
-                    fontSize = 10.sp
-                )
+                Text(song.name, color = Color.White, fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(song.author ?: "未知作者", color = SecondaryText, fontSize = 10.sp, maxLines = 1)
+                Text(song.transcribedBy ?: "未知创谱者", color = SecondaryText, fontSize = 10.sp, maxLines = 1)
             }
-            Spacer(Modifier.width(8.dp))
-            Text(
-                if (favorite) "★" else "☆",
-                color = Color(0xFFFFD229),
-                fontSize = 20.sp,
-                modifier = Modifier.clickable(onClick = onFavorite).padding(4.dp)
-            )
-            Spacer(Modifier.width(10.dp))
-            Text(
-                formatDuration(song.durationMs),
-                color = AccentColor,
-                fontSize = 11.sp
-            )
+            Spacer(Modifier.width(6.dp))
+            if (selected) {
+                Text("＋", color = Color.White, fontSize = 20.sp, modifier = Modifier.clickable(onClick = onAdd).padding(4.dp))
+                FavoriteStarIcon(filled = favorite, modifier = Modifier.size(28.dp).clickable(onClick = onFavorite).padding(4.dp))
+                Text("•••", color = SecondaryText, fontSize = 12.sp, modifier = Modifier.clickable(onClick = onLongClick).padding(6.dp))
+            } else {
+                if (favorite) {
+                    FavoriteStarIcon(filled = true, modifier = Modifier.size(23.dp).padding(4.dp))
+                    Spacer(Modifier.width(2.dp))
+                }
+                Text(formatDuration(song.durationMs), color = SecondaryText, fontSize = 11.sp)
+            }
         }
     }
 }
@@ -827,12 +863,17 @@ fun SongOptionsDialog(
 fun PlaylistDialog(
     items: List<LibraryItem>,
     nowPlaying: LibraryItem?,
+    playing: Boolean,
+    paused: Boolean,
+    favorites: Set<String>,
     onDismiss: () -> Unit,
     onPlay: (LibraryItem) -> Unit,
+    onFavorite: (LibraryItem) -> Unit,
     onRemove: (LibraryItem) -> Unit,
     onClear: () -> Unit
 ) {
     var confirmClear by remember { mutableStateOf(false) }
+    var moreItem by remember { mutableStateOf<LibraryItem?>(null) }
     var drawerVisible by remember { mutableStateOf(false) }
     val drawerScope = rememberCoroutineScope()
     val openEase = remember { Easing { t -> 1f - (1f - t) * (1f - t) * (1f - t) } }
@@ -902,10 +943,11 @@ fun PlaylistDialog(
             } else {
                     LazyColumn(Modifier.fillMaxSize().padding(start = 8.dp, end = 40.dp, top = 6.dp, bottom = 6.dp)) {
                     items(items, key = { it.fileName }) { item ->
+                        val isCurrent = nowPlaying?.fileName == item.fileName
                         Row(
                                 Modifier
                                     .fillMaxWidth()
-                                    .background(if (nowPlaying?.fileName == item.fileName) Color(0xFF303033) else Color(0xFF292929), RoundedCornerShape(5.dp))
+                                    .background(if (isCurrent) Color(0xFF303033) else Color(0xFF292929), RoundedCornerShape(5.dp))
                                     .clickable { onPlay(item) }
                                     .padding(8.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -914,15 +956,50 @@ fun PlaylistDialog(
                                     Modifier.size(56.dp).background(Color(0xFFC5C5C5), RoundedCornerShape(3.dp)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(if (nowPlaying?.fileName == item.fileName) "▶" else "♪", color = Color(0xFF55555D), fontSize = 20.sp)
+                                    Text(
+                                        if (isCurrent && playing && !paused) "Ⅱ" else if (isCurrent) "▶" else "",
+                                        color = Color(0xFFE1E1E6),
+                                        fontSize = 22.sp
+                                    )
                                 }
                                 Spacer(Modifier.width(10.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(item.song.name, color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            item.song.name,
+                                            color = Color.White,
+                                            fontSize = 13.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        if (isCurrent) {
+                                            Spacer(Modifier.width(5.dp))
+                                            Canvas(Modifier.width(16.dp).height(13.dp)) {
+                                                val barWidth = size.width / 5f
+                                                listOf(0.35f, 0.65f, 1f).forEachIndexed { index, ratio ->
+                                                    drawRect(
+                                                        color = AccentColor,
+                                                        topLeft = androidx.compose.ui.geometry.Offset(index * barWidth * 2f, size.height * (1f - ratio)),
+                                                        size = androidx.compose.ui.geometry.Size(barWidth, size.height * ratio)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                     Text(item.song.author ?: "未知作者", color = SecondaryText, fontSize = 10.sp, maxLines = 1)
-                                    Text(formatDuration(item.song.durationMs), color = SecondaryText, fontSize = 10.sp)
+                                    Text(item.song.transcribedBy ?: "未知做谱者", color = SecondaryText, fontSize = 10.sp, maxLines = 1)
                                 }
-                                Text("×", color = SecondaryText, fontSize = 18.sp, modifier = Modifier.clickable { onRemove(item) }.padding(8.dp))
+                                FavoriteStarIcon(
+                                    filled = item.fileName in favorites,
+                                    modifier = Modifier.size(36.dp).clickable { onFavorite(item) }.padding(7.dp)
+                                )
+                                Box(
+                                    Modifier.size(28.dp).background(Color(0xFF505054), CircleShape).clickable { moreItem = item },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("•••", color = Color(0xFF19191B), fontSize = 12.sp)
+                                }
                         }
                             Spacer(Modifier.height(6.dp))
                 }
@@ -946,6 +1023,44 @@ fun PlaylistDialog(
             },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } }
         )
+    }
+
+    moreItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { moreItem = null },
+            containerColor = PanelColor,
+            title = { Text(item.song.name, color = Color.White) },
+            text = {
+                Column {
+                    TextButton(onClick = { moreItem = null; onPlay(item) }) { Text("播放") }
+                    TextButton(onClick = { onFavorite(item) }) {
+                        Text(if (item.fileName in favorites) "取消收藏" else "收藏")
+                    }
+                    TextButton(onClick = { moreItem = null; onRemove(item) }) {
+                        Text("从播放列表移除", color = Color(0xFFE74C3C))
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { moreItem = null }) { Text("关闭") } }
+        )
+    }
+}
+
+@Composable
+private fun FavoriteStarIcon(filled: Boolean, modifier: Modifier = Modifier) {
+    val path = remember(filled) {
+        PathParser().parsePathString(
+            if (filled) {
+                "M12,17.27 L16.15,19.78 C16.91,20.24 17.84,19.56 17.64,18.70 L16.54,13.98 L20.21,10.80 C20.88,10.22 20.52,9.12 19.64,9.05 L14.81,8.64 L12.92,4.18 C12.58,3.37 11.42,3.37 11.08,4.18 L9.19,8.63 L4.36,9.04 C3.48,9.11 3.12,10.21 3.79,10.79 L7.46,13.97 L6.36,18.69 C6.16,19.55 7.09,20.23 7.85,19.77 L12,17.27 Z"
+            } else {
+                "M19.65,9.04 L14.81,8.62 L12.92,4.17 C12.58,3.36 11.42,3.36 11.08,4.17 L9.19,8.63 L4.36,9.04 C3.48,9.11 3.12,10.21 3.79,10.79 L7.46,13.97 L6.36,18.69 C6.16,19.55 7.09,20.23 7.85,19.77 L12,17.27 L16.15,19.78 C16.91,20.24 17.84,19.56 17.64,18.70 L16.54,13.97 L20.21,10.79 C20.88,10.21 20.53,9.11 19.65,9.04 Z M12,15.4 L8.24,17.67 L9.24,13.39 L5.92,10.51 L10.3,10.13 L12,6.1 L13.71,10.14 L18.09,10.52 L14.77,13.4 L15.77,17.68 Z"
+            }
+        ).toPath()
+    }
+    Canvas(modifier) {
+        scale(size.width / 24f, size.height / 24f, pivot = androidx.compose.ui.geometry.Offset.Zero) {
+            drawPath(path, Color(0xFFFFD600))
+        }
     }
 }
 
