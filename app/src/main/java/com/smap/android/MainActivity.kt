@@ -3,6 +3,7 @@ package com.smap.android
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -42,6 +43,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -75,6 +77,7 @@ import com.smap.android.data.SongRepository
 import com.smap.android.engine.AudioEngine
 import com.smap.android.engine.KeyPoint
 import com.smap.android.engine.PlayerEngine
+import com.smap.android.midi.MidiImporter
 import com.smap.android.service.FloatService
 import com.smap.android.ui.SMAPPlayButton
 import kotlinx.coroutines.Dispatchers
@@ -93,6 +96,12 @@ private val SecondaryText = Color(0xFF9A9AA1)
 private val LocalBlue = Color(0xFF2F6FD0)
 private val CloudGreen = Color(0xFF12795A)
 private val FavoriteGold = Color(0xFFE0B700)
+
+private data class PendingMidi(
+    val fileName: String,
+    val bytes: ByteArray,
+    val analysis: MidiImporter.Analysis
+)
 
 class MainActivity : ComponentActivity() {
     private var startFloatAfterPermission = false
@@ -159,6 +168,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
     var moreItem by remember { mutableStateOf<LibraryItem?>(null) }
     var showPlaylist by remember { mutableStateOf(false) }
     var showSpeed by remember { mutableStateOf(false) }
+    var pendingMidis by remember { mutableStateOf<List<PendingMidi>>(emptyList()) }
     var navTab by remember { mutableIntStateOf(0) }
     var query by remember { mutableStateOf("") }
     var ascending by remember { mutableStateOf(true) }
@@ -185,17 +195,37 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         scope.launch {
-            val results = withContext(Dispatchers.IO) { uris.map(repository::importSong) }
+            val midiFiles = withContext(Dispatchers.IO) {
+                uris.mapNotNull { uri ->
+                    val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) cursor.getString(0) else null
+                    } ?: uri.lastPathSegment.orEmpty().substringAfterLast('/')
+                    if (!name.endsWith(".mid", true) && !name.endsWith(".midi", true)) return@mapNotNull null
+                    runCatching {
+                        val bytes = context.contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+                        PendingMidi(name, bytes, MidiImporter.analyze(bytes))
+                    }.getOrNull()
+                }
+            }
+            val midiUris = uris.filter { uri ->
+                val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                }.orEmpty()
+                name.endsWith(".mid", true) || name.endsWith(".midi", true)
+            }.toSet()
+            val results = withContext(Dispatchers.IO) { uris.filterNot { it in midiUris }.map(repository::importSong) }
             items = withContext(Dispatchers.IO) { repository.loadSongs() }
             navTab = 0
             val success = results.count { it.isSuccess }
             val failure = results.size - success
+            pendingMidis = pendingMidis + midiFiles
             val message = when {
+                results.isEmpty() && midiFiles.isNotEmpty() -> null
                 failure == 0 -> "已导入 $success 首曲谱"
                 success == 0 -> results.firstNotNullOfOrNull { it.exceptionOrNull()?.message } ?: "导入失败"
                 else -> "已导入 $success 首，失败 $failure 首"
             }
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            message?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
         }
     }
 
@@ -417,6 +447,27 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                 playerEngine.setRandomSpeed(random)
                 preferences.saveSpeed(selectedSpeed, random)
                 showSpeed = false
+            }
+        )
+    }
+
+    pendingMidis.firstOrNull()?.let { pending ->
+        MidiImportDialog(
+            pending = pending,
+            onCancel = { pendingMidis = pendingMidis.drop(1) },
+            onImport = { name, selectedTracks, autoAlign, octave ->
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        repository.importMidi(pending.bytes, name, selectedTracks, autoAlign, octave)
+                    }
+                    pendingMidis = pendingMidis.drop(1)
+                    if (result.isSuccess) {
+                        items = withContext(Dispatchers.IO) { repository.loadSongs() }
+                        Toast.makeText(context, "已导入 1 首曲谱", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, result.exceptionOrNull()?.message ?: "导入失败", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         )
     }
