@@ -5,6 +5,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 
 data class CloudSheet(
     val id: Int,
@@ -26,6 +27,7 @@ data class CloudUser(val id: Int, val username: String, val mid: String, val ava
 
 class CloudApi(context: Context) {
     private val prefs = context.getSharedPreferences("cloud_auth", Context.MODE_PRIVATE)
+    private val coverCache = ConcurrentHashMap<String, ByteArray>()
     val user: CloudUser?
         get() {
             val mid = prefs.getString("mid", null) ?: return null
@@ -68,6 +70,11 @@ class CloudApi(context: Context) {
 
     fun download(sheet: CloudSheet): Result<ByteArray> = runCatching {
         request(if (sheet.downloadUrl.startsWith("http")) sheet.downloadUrl else BASE + sheet.downloadUrl)
+    }
+
+    fun cover(sheet: CloudSheet): ByteArray? {
+        if (sheet.coverUrl.isBlank()) return null
+        return coverCache[sheet.coverUrl] ?: runCatching { request(sheet.coverUrl) }.getOrNull()?.also { coverCache[sheet.coverUrl] = it }
     }
 
     private fun request(url: String, method: String = "GET", body: ByteArray? = null, contentType: String? = null): ByteArray {

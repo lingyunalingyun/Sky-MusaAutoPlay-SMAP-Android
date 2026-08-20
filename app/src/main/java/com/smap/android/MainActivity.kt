@@ -287,7 +287,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
         .filter { navTab != 2 || it.fileName in favorites }
         .filter {
             query.isBlank() || it.song.name.contains(query, true) ||
-                it.song.author.orEmpty().contains(query, true) || it.fileName.contains(query, true)
+                it.song.author.orEmpty().contains(query, true) || it.song.transcribedBy.orEmpty().contains(query, true) || it.fileName.contains(query, true)
         }
         .let { source ->
             when (sortMode) {
@@ -401,9 +401,10 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                     LibraryFilters(
                         query = query,
                         onQueryChange = { query = it },
-                        sortMode = sortMode,
-                        onReset = { query = "" },
-                        onToggleSort = { sortMode = (sortMode + 1) % 3 }
+                        firstLabel = "全部",
+                        secondLabel = when (sortMode) { 1 -> "名称 Z-A"; 2 -> "收藏优先"; else -> "名称 A-Z" },
+                        onFirst = { query = "" },
+                        onSecond = { sortMode = (sortMode + 1) % 3 }
                     )
                     LazyColumn(
                         modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 6.dp, vertical = 5.dp)
@@ -731,40 +732,28 @@ private fun CloudLibrary(api: CloudApi, onDownloaded: suspend (CloudSheet) -> Un
     }
 
     Column(Modifier.fillMaxSize()) {
-        BasicTextField(
-            value = query,
-            onValueChange = { query = it },
-            singleLine = true,
-            textStyle = TextStyle(color = Color.White, fontSize = 11.sp),
-            cursorBrush = SolidColor(AccentColor),
-            modifier = Modifier.fillMaxWidth().height(30.dp).background(CardColor).border(1.dp, BorderColor),
-            decorationBox = { input ->
-                Box(Modifier.fillMaxSize().padding(horizontal = 10.dp), contentAlignment = Alignment.CenterStart) {
-                    if (query.isEmpty()) Text("搜索", color = Color(0xFF77777D), fontSize = 11.sp)
-                    input()
-                }
-            }
+        LibraryFilters(
+            query = query,
+            onQueryChange = { query = it },
+            firstLabel = if (difficulty == 0) "全部难度" else "★".repeat(difficulty),
+            secondLabel = sortLabels[sortMode],
+            onFirst = { difficulty = (difficulty + 1) % 6 },
+            onSecond = { sortMode = (sortMode + 1) % sortLabels.size }
         )
-        Row(Modifier.fillMaxWidth()) {
-            FilterChip(if (difficulty == 0) "全部难度" else "★".repeat(difficulty), Modifier.weight(1f)) { difficulty = (difficulty + 1) % 6 }
-            FilterChip(sortLabels[sortMode], Modifier.weight(1f)) { sortMode = (sortMode + 1) % sortLabels.size }
-        }
         when {
             loading -> EmptyMessage("正在加载云端曲库…")
             error != null -> EmptyMessage(error!!)
             sheets.isEmpty() -> EmptyMessage("没有匹配的云端曲谱")
             else -> LazyColumn(Modifier.weight(1f).padding(horizontal = 6.dp, vertical = 5.dp)) {
                 items(sheets, key = { it.id }) { sheet ->
-                    Surface(Modifier.fillMaxWidth().height(68.dp), shape = RoundedCornerShape(6.dp), color = CardColor) {
+                    Surface(Modifier.fillMaxWidth().height(78.dp), shape = RoundedCornerShape(6.dp), color = CardColor) {
                         Row(Modifier.padding(horizontal = 9.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(45.dp).background(CloudGreen, RoundedCornerShape(6.dp)), contentAlignment = Alignment.Center) {
-                                Text("☁", color = Color.White, fontSize = 20.sp)
-                            }
+                            CloudCover(sheet, api)
                             Spacer(Modifier.width(8.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(sheet.title, color = Color.White, fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(sheet.artist.ifBlank { "未知作者" }, color = SecondaryText, fontSize = 9.sp, maxLines = 1)
-                                Text("${"★".repeat(sheet.difficulty.coerceIn(0, 5))}  BPM ${sheet.bpm}  ↓${sheet.downloads}  ♥${sheet.likes}", color = SecondaryText, fontSize = 8.sp, maxLines = 1)
+                                Text("作者：${sheet.artist.ifBlank { "未知作者" }} · 做谱者：${sheet.transcribedBy.ifBlank { "未知做谱者" }}", color = SecondaryText, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("难度：${"★".repeat(sheet.difficulty.coerceIn(0, 5)).ifBlank { "未标注" }}   下载：${sheet.downloads}", color = SecondaryText, fontSize = 8.sp, maxLines = 1)
                             }
                             TextButton(enabled = downloadingId == null, onClick = {
                                 downloadingId = sheet.id
@@ -781,6 +770,19 @@ private fun CloudLibrary(api: CloudApi, onDownloaded: suspend (CloudSheet) -> Un
             }
         }
         Text("共 $total 首", color = SecondaryText, fontSize = 9.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 3.dp))
+    }
+}
+
+@Composable
+private fun CloudCover(sheet: CloudSheet, api: CloudApi) {
+    var bytes by remember(sheet.coverUrl) { mutableStateOf<ByteArray?>(null) }
+    LaunchedEffect(sheet.coverUrl) {
+        bytes = withContext(Dispatchers.IO) { api.cover(sheet) }
+    }
+    val cover = remember(bytes) { bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() } }
+    Box(Modifier.size(50.dp).background(CloudGreen, RoundedCornerShape(6.dp)).border(1.dp, BorderColor, RoundedCornerShape(6.dp)), contentAlignment = Alignment.Center) {
+        if (cover != null) Image(cover, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else Text("☁", color = Color.White, fontSize = 20.sp)
     }
 }
 
@@ -891,9 +893,10 @@ fun NavButton(label: String, active: Boolean, activeColor: Color, modifier: Modi
 fun LibraryFilters(
     query: String,
     onQueryChange: (String) -> Unit,
-    sortMode: Int,
-    onReset: () -> Unit,
-    onToggleSort: () -> Unit
+    firstLabel: String,
+    secondLabel: String,
+    onFirst: () -> Unit,
+    onSecond: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         BasicTextField(
@@ -911,8 +914,8 @@ fun LibraryFilters(
             }
         )
         Row(modifier = Modifier.fillMaxWidth()) {
-            FilterChip("全部", Modifier.weight(1f), onReset)
-            FilterChip(when (sortMode) { 1 -> "名称 Z-A"; 2 -> "收藏优先"; else -> "名称 A-Z" }, Modifier.weight(1f), onToggleSort)
+            FilterChip(firstLabel, Modifier.weight(1f), onFirst)
+            FilterChip(secondLabel, Modifier.weight(1f), onSecond)
         }
     }
 }
@@ -943,7 +946,7 @@ fun SongCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(62.dp)
+            .height(72.dp)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = RoundedCornerShape(5.dp),
         color = if (selected) Color(0xFF454552) else Color.Transparent
@@ -968,8 +971,8 @@ fun SongCard(
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(song.name, color = Color.White, fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(song.author ?: "未知作者", color = SecondaryText, fontSize = 10.sp, maxLines = 1)
-                Text(song.transcribedBy ?: "未知创谱者", color = SecondaryText, fontSize = 10.sp, maxLines = 1)
+                Text("作者：${song.author ?: "未知作者"}", color = SecondaryText, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("做谱者：${song.transcribedBy ?: "未知做谱者"}", color = SecondaryText, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.width(6.dp))
             if (selected) {
@@ -1146,8 +1149,7 @@ fun BottomBar(
                     Column(Modifier.width(155.dp)) {
                         Text(item?.song?.name ?: "未有正在播放的歌曲", color = Color.White, fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (item != null) {
-                            Text(item.song.author ?: "未知作者", color = SecondaryText, fontSize = 9.sp, maxLines = 1)
-                            Text(item.song.transcribedBy ?: "未知创谱者", color = SecondaryText, fontSize = 9.sp, maxLines = 1)
+                            Text("作者：${item.song.author ?: "未知作者"} · 做谱者：${item.song.transcribedBy ?: "未知做谱者"}", color = SecondaryText, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                     if (item != null) FavoriteStarIcon(favorite, Modifier.size(30.dp).clickable(onClick = onFavorite).padding(4.dp))
@@ -1391,8 +1393,8 @@ fun PlaylistDialog(
                                             }
                                         }
                                     }
-                                    Text(item.song.author ?: "未知作者", color = SecondaryText, fontSize = 10.sp, maxLines = 1)
-                                    Text(item.song.transcribedBy ?: "未知做谱者", color = SecondaryText, fontSize = 10.sp, maxLines = 1)
+                                    Text("作者：${item.song.author ?: "未知作者"}", color = SecondaryText, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("做谱者：${item.song.transcribedBy ?: "未知做谱者"}", color = SecondaryText, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                                 FavoriteStarIcon(
                                     filled = item.fileName in favorites,
