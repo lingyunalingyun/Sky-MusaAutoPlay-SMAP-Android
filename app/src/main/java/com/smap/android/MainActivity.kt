@@ -105,6 +105,7 @@ import com.smap.android.midi.MidiImporter
 import com.smap.android.service.FloatService
 import com.smap.android.service.SMAPAccessibilityService
 import com.smap.android.ui.SMAPPlayButton
+import com.smap.android.ui.PracticePanel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -239,6 +240,7 @@ fun MainScreen(onGameModeChange: (Boolean) -> Unit = {}) {
     var positionMs by remember { mutableStateOf(0L) }
     val keyFlashes = remember { mutableStateListOf(*Array(15) { 0 }) }
     var moreItem by remember { mutableStateOf<LibraryItem?>(null) }
+    var practiceItem by remember { mutableStateOf<LibraryItem?>(null) }
     var deleteItem by remember { mutableStateOf<LibraryItem?>(null) }
     var showPlaylist by remember { mutableStateOf(false) }
     var showSpeed by remember { mutableStateOf(false) }
@@ -443,7 +445,26 @@ fun MainScreen(onGameModeChange: (Boolean) -> Unit = {}) {
             .fillMaxSize()
             .background(WindowColor)
     ) {
-        Row(modifier = Modifier.weight(1f).fillMaxWidth().padding(6.dp)) {
+        if (practiceItem != null) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth().padding(6.dp)) {
+                PracticePanel(
+                    item = practiceItem!!,
+                    pitch = pitch,
+                    gameMode = gameMode,
+                    onBack = { practiceItem = null },
+                    onGameMode = {
+                        if (gameMode) {
+                            gameMode = false
+                            onGameModeChange(false)
+                        } else if (accessibilityDisclosurePreferences.getBoolean("accepted", false)) {
+                            gameMode = true
+                            onGameModeChange(true)
+                        } else showAccessibilityDisclosure = true
+                    },
+                    onKeyDown = { key -> audioEngine.play(key); keyFlashes[key]++ }
+                )
+            }
+        } else Row(modifier = Modifier.weight(1f).fillMaxWidth().padding(6.dp)) {
             Sidebar(selected = navTab, onSelect = { tab ->
                 if (tab == 3) {
                     importLauncher.launch(arrayOf("application/json", "text/plain", "audio/midi", "audio/x-midi", "application/octet-stream"))
@@ -558,6 +579,11 @@ fun MainScreen(onGameModeChange: (Boolean) -> Unit = {}) {
                     onKeyPress = { key ->
                         audioEngine.play(key)
                         keyFlashes[key]++
+                    },
+                    onPractice = {
+                        val target = nowPlaying ?: selectedItem
+                        if (target == null) Toast.makeText(context, tr("请先选择一首歌曲"), Toast.LENGTH_SHORT).show()
+                        else practiceItem = target
                     },
                     modifier = Modifier.weight(0.58f)
                 )
@@ -1276,6 +1302,7 @@ fun RightPanel(
     keyFlashes: List<Int> = List(15) { 0 },
     pitch: Int = 0,
     onKeyPress: (Int) -> Unit = {},
+    onPractice: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -1288,13 +1315,20 @@ fun RightPanel(
         Spacer(Modifier.height(4.dp))
         val scaleSemitones = intArrayOf(0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24)
         repeat(3) { rowIndex ->
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(modifier = Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 repeat(5) { columnIndex ->
                     val keyIndex = rowIndex * 5 + columnIndex
                     KeyboardKey(noteName(scaleSemitones[keyIndex] + pitch), keyFlashes[keyIndex], { onKeyPress(keyIndex) }, Modifier.weight(1f))
                 }
             }
             if (rowIndex < 2) Spacer(Modifier.height(10.dp))
+        }
+        Spacer(Modifier.height(10.dp))
+        Box(
+            Modifier.fillMaxWidth().height(42.dp).background(Color(0xFF00A82D), RoundedCornerShape(7.dp)).clickable(onClick = onPractice),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(tr("练习"), color = Color.White, fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
         }
     }
 }
@@ -1331,7 +1365,7 @@ fun KeyboardKey(label: String, flash: Int = 0, onClick: () -> Unit = {}, modifie
 
     Box(
         modifier = modifier
-            .height(70.dp)
+            .fillMaxHeight()
             .padding(4.dp)
             .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
             .background(background.value, RoundedCornerShape(7.dp))
