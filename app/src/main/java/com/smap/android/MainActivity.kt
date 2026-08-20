@@ -695,7 +695,6 @@ private fun CloudLibrary(api: CloudApi, onDownloaded: suspend (CloudSheet) -> Un
     var sortMode by remember { mutableIntStateOf(1) }
     var difficulty by remember { mutableIntStateOf(0) }
     var total by remember { mutableIntStateOf(0) }
-    var refresh by remember { mutableIntStateOf(0) }
     var loading by remember { mutableStateOf(false) }
     var downloadingId by remember { mutableStateOf<Int?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -704,7 +703,12 @@ private fun CloudLibrary(api: CloudApi, onDownloaded: suspend (CloudSheet) -> Un
     val sortKeys = listOf("newest", "newest", "hot", "downloads")
     val sortLabels = listOf("A-Z", "上传时间", "点赞", "下载量")
 
-    LaunchedEffect(appliedQuery, sortMode, difficulty, refresh) {
+    LaunchedEffect(query) {
+        delay(350)
+        appliedQuery = query
+    }
+
+    LaunchedEffect(appliedQuery, sortMode, difficulty) {
         loading = true
         error = null
         val result = withContext(Dispatchers.IO) {
@@ -726,24 +730,30 @@ private fun CloudLibrary(api: CloudApi, onDownloaded: suspend (CloudSheet) -> Un
         loading = false
     }
 
-    Column(Modifier.fillMaxSize().padding(6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) { CloudInput(query, { query = it }, "搜索云端曲谱") }
-            Spacer(Modifier.width(4.dp))
-            FilterChip("搜索") { appliedQuery = query }
-        }
-        Spacer(Modifier.height(5.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            FilterChip(sortLabels[sortMode], Modifier.weight(1f)) { sortMode = (sortMode + 1) % sortLabels.size }
+    Column(Modifier.fillMaxSize()) {
+        BasicTextField(
+            value = query,
+            onValueChange = { query = it },
+            singleLine = true,
+            textStyle = TextStyle(color = Color.White, fontSize = 11.sp),
+            cursorBrush = SolidColor(AccentColor),
+            modifier = Modifier.fillMaxWidth().height(30.dp).background(CardColor).border(1.dp, BorderColor),
+            decorationBox = { input ->
+                Box(Modifier.fillMaxSize().padding(horizontal = 10.dp), contentAlignment = Alignment.CenterStart) {
+                    if (query.isEmpty()) Text("搜索", color = Color(0xFF77777D), fontSize = 11.sp)
+                    input()
+                }
+            }
+        )
+        Row(Modifier.fillMaxWidth()) {
             FilterChip(if (difficulty == 0) "全部难度" else "★".repeat(difficulty), Modifier.weight(1f)) { difficulty = (difficulty + 1) % 6 }
-            FilterChip("刷新", Modifier.weight(0.7f)) { refresh++ }
+            FilterChip(sortLabels[sortMode], Modifier.weight(1f)) { sortMode = (sortMode + 1) % sortLabels.size }
         }
-        Spacer(Modifier.height(5.dp))
         when {
             loading -> EmptyMessage("正在加载云端曲库…")
             error != null -> EmptyMessage(error!!)
             sheets.isEmpty() -> EmptyMessage("没有匹配的云端曲谱")
-            else -> LazyColumn(Modifier.weight(1f)) {
+            else -> LazyColumn(Modifier.weight(1f).padding(horizontal = 6.dp, vertical = 5.dp)) {
                 items(sheets, key = { it.id }) { sheet ->
                     Surface(Modifier.fillMaxWidth().height(68.dp), shape = RoundedCornerShape(6.dp), color = CardColor) {
                         Row(Modifier.padding(horizontal = 9.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
