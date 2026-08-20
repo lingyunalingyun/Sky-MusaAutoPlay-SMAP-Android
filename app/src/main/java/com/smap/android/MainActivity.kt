@@ -184,6 +184,8 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
     var deleteItem by remember { mutableStateOf<LibraryItem?>(null) }
     var showPlaylist by remember { mutableStateOf(false) }
     var showSpeed by remember { mutableStateOf(false) }
+    var showInstrument by remember { mutableStateOf(false) }
+    var showPitch by remember { mutableStateOf(false) }
     var pendingMidis by remember { mutableStateOf<List<PendingMidi>>(emptyList()) }
     var navTab by remember { mutableIntStateOf(0) }
     var query by remember { mutableStateOf("") }
@@ -200,6 +202,13 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     val audioEngine = remember { AudioEngine(context) }
     val playerEngine = remember { PlayerEngine(scope) }
+    var instrument by remember { mutableStateOf(preferences.instrument().takeIf { it in audioEngine.instruments } ?: "Piano") }
+    var pitch by remember(instrument) { mutableIntStateOf(preferences.pitch(instrument)) }
+
+    LaunchedEffect(instrument, pitch) {
+        withContext(Dispatchers.IO) { audioEngine.setInstrument(instrument) }
+        audioEngine.setPitch(pitch)
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -411,6 +420,8 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
             positionMs = positionMs,
             playMode = playMode,
             speedLabel = if (randomSpeed) "随机速度" else "${speed}×",
+            instrumentLabel = instrument,
+            pitchLabel = pitch,
             favorite = (nowPlaying ?: selectedItem)?.fileName in favorites,
             onPlay = {
                 if (isPlaying && !isPaused) {
@@ -440,6 +451,8 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                 preferences.savePlayMode(playMode)
             },
             onSpeed = { showSpeed = true },
+            onInstrument = { showInstrument = true },
+            onPitch = { showPitch = true },
             onPlaylist = { showPlaylist = true },
             onFavorite = {
                 (nowPlaying ?: selectedItem)?.let { favorites = preferences.toggleFavorite(it.fileName) }
@@ -547,6 +560,24 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                 showSpeed = false
             }
         )
+    }
+
+    if (showInstrument) {
+        ChoiceDialog("选择音色", audioEngine.instruments, instrument, { showInstrument = false }) { selected ->
+            instrument = selected
+            pitch = preferences.pitch(selected)
+            preferences.saveInstrument(selected)
+            showInstrument = false
+        }
+    }
+
+    if (showPitch) {
+        val pitches = (-24..24).map { value -> "$value|${if (value > 0) "+" else ""}$value ${noteName(value)}" }
+        ChoiceDialog("音高", pitches, "$pitch|${if (pitch > 0) "+" else ""}$pitch ${noteName(pitch)}", { showPitch = false }) { selected ->
+            pitch = selected.substringBefore('|').toInt()
+            preferences.savePitch(instrument, pitch)
+            showPitch = false
+        }
     }
 
     pendingMidis.firstOrNull()?.let { pending ->
@@ -798,12 +829,16 @@ fun BottomBar(
     positionMs: Long,
     playMode: Int,
     speedLabel: String,
+    instrumentLabel: String,
+    pitchLabel: Int,
     favorite: Boolean,
     onPlay: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onPlayMode: () -> Unit,
     onSpeed: () -> Unit,
+    onInstrument: () -> Unit,
+    onPitch: () -> Unit,
     onPlaylist: () -> Unit,
     onFavorite: () -> Unit,
     onSeek: (Float) -> Unit,
@@ -861,9 +896,9 @@ fun BottomBar(
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     TransportVector("list", Modifier.size(36.dp).clickable(onClick = onPlaylist).padding(7.dp))
                     Spacer(Modifier.weight(1f))
-                    PlayerPill("音色:Piano") {}
+                    PlayerPill("音色:$instrumentLabel", onInstrument)
                     Spacer(Modifier.width(6.dp))
-                    PlayerPill("音高:0 C") {}
+                    PlayerPill("音高:${if (pitchLabel > 0) "+" else ""}$pitchLabel ${noteName(pitchLabel)}", onPitch)
                     Spacer(Modifier.width(6.dp))
                     PlayerPill(speedLabel, onSpeed)
                 }
@@ -1313,6 +1348,35 @@ fun SpeedDialog(
         confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
     )
 }
+
+@Composable
+private fun ChoiceDialog(
+    title: String,
+    options: List<String>,
+    selected: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = PanelColor,
+        title = { Text(title, color = Color.White) },
+        text = {
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+                items(options) { option ->
+                    val display = option.substringAfter('|', option)
+                    TextButton(onClick = { onSelect(option) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (option == selected) "✓ $display" else display, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
+    )
+}
+
+private fun noteName(semitones: Int): String =
+    listOf("C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B")[(semitones % 12 + 12) % 12]
 
 /** 曲谱详情 */
 @Composable
