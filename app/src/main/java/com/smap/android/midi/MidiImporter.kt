@@ -77,8 +77,7 @@ object MidiImporter {
 
         // 2. 音符: (tick, midiNote)，按 tick 排序
         val notes = midi.events.filter { it.isNoteOn && (selectedTracks == null || it.trackIndex in selectedTracks) }
-            .map { it.absoluteTick to it.data1 }
-            .sortedBy { it.first }
+            .sortedWith(compareBy<MidiEvent> { it.trackIndex }.thenBy { it.absoluteTick })
 
         if (notes.isEmpty()) {
             return SkySong(name, null, "MIDI导入", 120, 16, 0, false, false, 15, emptyList())
@@ -100,18 +99,20 @@ object MidiImporter {
         }
 
         // 4. 自动移调: 白键率最高 + 中位音八度居中
-        val rawNotes = notes.map { it.second }
+        val rawNotes = notes.map { it.data1 }
         val semitone = if (autoAlign) suggestSemitone(rawNotes) else 0
         val oct = if (autoAlign) centerOctave(rawNotes, semitone) else octaveShift
         val shift = semitone + oct * 12
 
         // 5. 黑键方向吸附（当前 vs 前一个音高）
-        var prevPitch = Int.MIN_VALUE
-        val skyNotes = notes.map { (tick, pitch) ->
-            val dir = if (prevPitch == Int.MIN_VALUE) 0 else pitch.compareTo(prevPitch)
-            prevPitch = pitch
-            SongNote(tickToMs(tick).toInt(), toSkyKey(pitch + shift, dir))
-        }.distinctBy { "${it.key}@${it.time}" }
+        val previousPitch = mutableMapOf<Int, Int>()
+        val skyNotes = notes.map { event ->
+            val pitch = event.data1
+            val previous = previousPitch[event.trackIndex]
+            val dir = if (previous == null) 0 else pitch.compareTo(previous)
+            previousPitch[event.trackIndex] = pitch
+            SongNote(tickToMs(event.absoluteTick).toInt(), toSkyKey(pitch + shift, dir))
+        }.sortedBy { it.time }.distinctBy { "${it.key}@${it.time}" }
 
         val bpm = if (tempos[0].second > 0) (60_000_000.0 / tempos[0].second).toInt() else 120
 

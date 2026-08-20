@@ -11,8 +11,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Animatable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.Animatable as FloatAnimatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.core.view.WindowCompat
@@ -24,6 +28,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,6 +76,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.smap.android.data.LibraryItem
 import com.smap.android.data.LibraryPreferences
 import com.smap.android.data.SongRepository
@@ -166,6 +173,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
     var positionMs by remember { mutableStateOf(0L) }
     val keyFlashes = remember { mutableStateListOf(*Array(15) { 0 }) }
     var moreItem by remember { mutableStateOf<LibraryItem?>(null) }
+    var deleteItem by remember { mutableStateOf<LibraryItem?>(null) }
     var showPlaylist by remember { mutableStateOf(false) }
     var showSpeed by remember { mutableStateOf(false) }
     var pendingMidis by remember { mutableStateOf<List<PendingMidi>>(emptyList()) }
@@ -417,7 +425,39 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                     preferences.savePlaylist(playlistFiles)
                 }
                 moreItem = null
-            }
+            },
+            onDelete = { moreItem = null; deleteItem = item }
+        )
+    }
+
+    deleteItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { deleteItem = null },
+            containerColor = PanelColor,
+            title = { Text("从曲库中移除", color = Color.White) },
+            text = { Text("确定从曲库中移除「${item.song.name}」吗？", color = Color.White) },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleteItem = null
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) { repository.deleteSong(item.fileName) }
+                        if (result.isSuccess) {
+                            if (nowPlaying?.fileName == item.fileName) {
+                                stopPlayback()
+                                nowPlaying = null
+                                selectedItem = null
+                            }
+                            favorites = preferences.removeSong(item.fileName)
+                            playlistFiles = playlistFiles - item.fileName
+                            items = withContext(Dispatchers.IO) { repository.loadSongs() }
+                            Toast.makeText(context, "已从曲库移除「${item.song.name}」", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "删除失败：${result.exceptionOrNull()?.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }) { Text("移除", color = Color(0xFFE74C3C)) }
+            },
+            dismissButton = { TextButton(onClick = { deleteItem = null }) { Text("取消") } }
         )
     }
 
@@ -426,11 +466,19 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
             items = playlist,
             nowPlaying = nowPlaying,
             onDismiss = { showPlaylist = false },
-            onPlay = { showPlaylist = false; startPlayback(it, true) },
+            onPlay = { startPlayback(it, true) },
             onRemove = { item ->
                 playlistFiles = playlistFiles - item.fileName
                 preferences.savePlaylist(playlistFiles)
                 if (nowPlaying?.fileName == item.fileName) stopPlayback()
+            },
+            onClear = {
+                if (nowPlaying?.let { current -> playlist.any { it.fileName == current.fileName } } == true) {
+                    stopPlayback()
+                    nowPlaying = null
+                }
+                playlistFiles = emptyList()
+                preferences.savePlaylist(emptyList())
             }
         )
     }
@@ -754,7 +802,8 @@ fun SongOptionsDialog(
     onDismiss: () -> Unit,
     onPlay: () -> Unit,
     onFavorite: () -> Unit,
-    onAddPlaylist: () -> Unit
+    onAddPlaylist: () -> Unit,
+    onDelete: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -767,6 +816,7 @@ fun SongOptionsDialog(
                     Text(if (inPlaylist) "已在播放列表" else "添加到播放列表")
                 }
                 TextButton(onClick = onFavorite) { Text(if (favorite) "取消收藏" else "收藏") }
+                TextButton(onClick = onDelete) { Text("从曲库中移除", color = Color(0xFFE74C3C)) }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
@@ -779,31 +829,214 @@ fun PlaylistDialog(
     nowPlaying: LibraryItem?,
     onDismiss: () -> Unit,
     onPlay: (LibraryItem) -> Unit,
-    onRemove: (LibraryItem) -> Unit
+    onRemove: (LibraryItem) -> Unit,
+    onClear: () -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = PanelColor,
-        title = { Text("播放列表 · ${items.size} 首", color = Color.White) },
-        text = {
+    var confirmClear by remember { mutableStateOf(false) }
+    var drawerVisible by remember { mutableStateOf(false) }
+    val drawerScope = rememberCoroutineScope()
+    val openEase = remember { Easing { t -> 1f - (1f - t) * (1f - t) * (1f - t) } }
+    val closeEase = remember { Easing { t -> t * t * t } }
+    fun closeDrawer() {
+        if (!drawerVisible) return
+        drawerVisible = false
+        drawerScope.launch {
+            delay(220)
+            onDismiss()
+        }
+    }
+    LaunchedEffect(Unit) { drawerVisible = true }
+    Dialog(
+        onDismissRequest = { closeDrawer() },
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        val outsideInteraction = remember { MutableInteractionSource() }
+        Box(
+            Modifier.fillMaxSize().clickable(
+                interactionSource = outsideInteraction,
+                indication = null,
+                onClick = { closeDrawer() }
+            )
+        ) {
+            AnimatedVisibility(
+                visible = drawerVisible,
+                modifier = Modifier.align(Alignment.CenterEnd),
+                enter = slideInHorizontally(
+                    initialOffsetX = { it },
+                    animationSpec = tween(260, easing = openEase)
+                ),
+                exit = slideOutHorizontally(
+                    targetOffsetX = { it },
+                    animationSpec = tween(220, easing = closeEase)
+                )
+            ) {
+            Column(
+                Modifier
+                    .fillMaxWidth(0.36f)
+                    .fillMaxHeight()
+                    .background(PanelColor, RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp))
+                    .border(1.dp, BorderColor, RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    )
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().height(48.dp).padding(start = 12.dp, end = 40.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("播放列表", color = Color.White, fontSize = 19.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Spacer(Modifier.width(8.dp))
+                    Text("${items.size} 首", color = SecondaryText, fontSize = 11.sp)
+                    Spacer(Modifier.weight(1f))
+                    if (items.isNotEmpty()) {
+                        Text("清空", color = SecondaryText, fontSize = 11.sp, modifier = Modifier.clickable { confirmClear = true }.padding(6.dp))
+                    }
+                }
+                Box(Modifier.fillMaxWidth().height(1.dp).background(BorderColor))
             if (items.isEmpty()) {
-                Text("长按曲库中的歌曲，即可添加到播放列表", color = SecondaryText)
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("播放列表为空\n长按曲库歌曲即可添加", color = SecondaryText, fontSize = 12.sp)
+                    }
             } else {
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
+                    LazyColumn(Modifier.fillMaxSize().padding(start = 8.dp, end = 40.dp, top = 6.dp, bottom = 6.dp)) {
                     items(items, key = { it.fileName }) { item ->
                         Row(
-                            Modifier.fillMaxWidth().clickable { onPlay(item) }.padding(vertical = 8.dp),
+                                Modifier
+                                    .fillMaxWidth()
+                                    .background(if (nowPlaying?.fileName == item.fileName) Color(0xFF303033) else Color(0xFF292929), RoundedCornerShape(5.dp))
+                                    .clickable { onPlay(item) }
+                                    .padding(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(if (nowPlaying?.fileName == item.fileName) "▶" else "♪", color = AccentColor, modifier = Modifier.width(28.dp))
-                            Text(item.song.name, color = Color.White, maxLines = 1, modifier = Modifier.weight(1f))
-                            Text("移除", color = SecondaryText, modifier = Modifier.clickable { onRemove(item) }.padding(8.dp))
+                                Box(
+                                    Modifier.size(56.dp).background(Color(0xFFC5C5C5), RoundedCornerShape(3.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(if (nowPlaying?.fileName == item.fileName) "▶" else "♪", color = Color(0xFF55555D), fontSize = 20.sp)
+                                }
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(item.song.name, color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(item.song.author ?: "未知作者", color = SecondaryText, fontSize = 10.sp, maxLines = 1)
+                                    Text(formatDuration(item.song.durationMs), color = SecondaryText, fontSize = 10.sp)
+                                }
+                                Text("×", color = SecondaryText, fontSize = 18.sp, modifier = Modifier.clickable { onRemove(item) }.padding(8.dp))
                         }
+                            Spacer(Modifier.height(6.dp))
+                }
+            }
+            }
+        }
+            }
+        }
+    }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            containerColor = PanelColor,
+            title = { Text("清空播放列表", color = Color.White) },
+            text = { Text("确定清空播放列表吗？", color = Color.White) },
+            confirmButton = {
+                TextButton(onClick = { confirmClear = false; onClear() }) {
+                    Text("清空", color = Color(0xFFE74C3C))
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } }
+        )
+    }
+}
+
+@Composable
+private fun MidiImportDialog(
+    pending: PendingMidi,
+    onCancel: () -> Unit,
+    onImport: (String, Set<Int>, Boolean, Int) -> Unit
+) {
+    var selectedTracks by remember(pending.fileName) {
+        mutableStateOf(pending.analysis.tracks.map { it.index }.toSet())
+    }
+    var autoAlign by remember(pending.fileName) { mutableStateOf(true) }
+    var octave by remember(pending.fileName) { mutableStateOf("0") }
+    var songName by remember(pending.fileName) { mutableStateOf(pending.fileName.substringBeforeLast('.')) }
+    val shift = if (autoAlign && selectedTracks.isNotEmpty()) MidiImporter.suggestShift(pending.bytes, selectedTracks) else 0
+    val whiteRatio = if (autoAlign && selectedTracks.isNotEmpty()) MidiImporter.whiteRatio(pending.bytes, selectedTracks, shift) else 0.0
+
+    AlertDialog(
+        onDismissRequest = onCancel,
+        containerColor = PanelColor,
+        title = { Text("导入 MIDI", color = Color.White) },
+        text = {
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 430.dp)) {
+                item {
+                    Text(pending.fileName, color = Color.White, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Text("选择音轨", color = SecondaryText, fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp, bottom = 4.dp))
+                }
+                items(pending.analysis.tracks, key = { it.index }) { track ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            selectedTracks = selectedTracks.toMutableSet().apply {
+                                if (!add(track.index)) remove(track.index)
+                            }
+                        },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(checked = track.index in selectedTracks, onCheckedChange = null)
+                        Text("${track.name}  (${track.noteCount} 音符)", color = Color.White, fontSize = 12.sp)
                     }
+                }
+                item {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { autoAlign = !autoAlign },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(checked = autoAlign, onCheckedChange = null)
+                        Text("自动移调对齐 C 大调", color = Color.White, fontSize = 12.sp)
+                    }
+                    if (autoAlign) {
+                        Text(
+                            if (selectedTracks.isEmpty()) "请至少选择一条音轨" else "已移调 ${"%+d".format(shift)} 半音 · 白键率 ${(whiteRatio * 100).toInt()}%",
+                            color = Color(0xFF2AAA77), fontSize = 11.sp, modifier = Modifier.padding(start = 12.dp, bottom = 6.dp)
+                        )
+                    } else {
+                        Text("手动八度", color = SecondaryText, fontSize = 11.sp)
+                        ImportTextField(octave, { octave = it.filter { c -> c == '-' || c.isDigit() } }, "0")
+                    }
+                    Text("曲名", color = SecondaryText, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+                    ImportTextField(songName, { songName = it }, "MIDI 导入")
+                    Text("检测 BPM：${"%.1f".format(pending.analysis.initialBpm)}", color = SecondaryText, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
+        confirmButton = {
+            TextButton(
+                enabled = selectedTracks.isNotEmpty(),
+                onClick = {
+                    onImport(songName.trim().ifBlank { "MIDI 导入" }, selectedTracks, autoAlign, octave.toIntOrNull() ?: 0)
+                }
+            ) { Text("导入") }
+        },
+        dismissButton = { TextButton(onClick = onCancel) { Text("取消") } }
+    )
+}
+
+@Composable
+private fun ImportTextField(value: String, onValueChange: (String) -> Unit, hint: String) {
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        textStyle = TextStyle(color = Color.White, fontSize = 12.sp),
+        cursorBrush = SolidColor(AccentColor),
+        modifier = Modifier.fillMaxWidth().height(34.dp).background(CardColor).border(1.dp, BorderColor),
+        decorationBox = { input ->
+            Box(Modifier.fillMaxSize().padding(horizontal = 8.dp), contentAlignment = Alignment.CenterStart) {
+                if (value.isEmpty()) Text(hint, color = SecondaryText, fontSize = 12.sp)
+                input()
+            }
+        }
     )
 }
 

@@ -14,13 +14,16 @@ data class LibraryItem(val fileName: String, val song: SkySong)
 class SongRepository(private val context: Context) {
     private val assets = context.assets
     private val importedDir = File(context.filesDir, "songs")
+    private val prefs = context.getSharedPreferences("library", Context.MODE_PRIVATE)
 
     fun loadSongs(): List<LibraryItem> {
         val importedFiles = importedDir.listFiles().orEmpty().filter { it.isFile && supported(it.name) }
         val importedNames = importedFiles.map { it.name }.toSet()
+        val hidden = prefs.getStringSet("hidden_songs", emptySet()).orEmpty()
         val bundled = (assets.list("songs") ?: emptyArray())
             .filter { it.endsWith(".txt") || it.endsWith(".json") || it.endsWith(".mid") || it.endsWith(".midi") }
             .filterNot { it in importedNames }
+            .filterNot { it in hidden }
             .mapNotNull { f ->
                 runCatching {
                     val bytes = assets.open("songs/$f").readBytes()
@@ -28,7 +31,7 @@ class SongRepository(private val context: Context) {
                     if (song != null) LibraryItem(f, song) else null
                 }.getOrNull()
             }
-        val imported = importedFiles
+        val imported = importedFiles.filterNot { it.name in hidden }
             .mapNotNull { file ->
                 runCatching {
                     val song = parse(file.name, file.readBytes())
@@ -47,6 +50,7 @@ class SongRepository(private val context: Context) {
         importedDir.mkdirs()
         val target = File(importedDir, displayName)
         target.writeBytes(bytes)
+        unhide(target.name)
         LibraryItem(target.name, song)
     }
 
@@ -63,7 +67,21 @@ class SongRepository(private val context: Context) {
         importedDir.mkdirs()
         val target = uniqueFile("$name.json")
         target.writeText(song.toJson(), Charsets.UTF_8)
+        unhide(target.name)
         LibraryItem(target.name, song)
+    }
+
+    fun deleteSong(fileName: String): Result<Unit> = runCatching {
+        val imported = File(importedDir, fileName)
+        if (imported.exists() && !imported.delete()) error("无法删除曲谱文件")
+        val hidden = prefs.getStringSet("hidden_songs", emptySet()).orEmpty().toMutableSet()
+        hidden.add(fileName)
+        prefs.edit().putStringSet("hidden_songs", hidden).apply()
+    }
+
+    private fun unhide(fileName: String) {
+        val hidden = prefs.getStringSet("hidden_songs", emptySet()).orEmpty().toMutableSet()
+        if (hidden.remove(fileName)) prefs.edit().putStringSet("hidden_songs", hidden).apply()
     }
 
     private fun parse(fileName: String, bytes: ByteArray): SkySong? = when {

@@ -8,7 +8,8 @@ data class SongNote(val time: Int, val key: Int) {
     companion object {
         fun fromJson(o: JSONObject): SongNote {
             val keyStr = o.optString("key", "1Key0")
-            val key = keyStr.removePrefix("1Key").toIntOrNull() ?: 0
+            val key = Regex("(\\d+)\\s*$").find(keyStr)?.groupValues?.get(1)?.toIntOrNull()
+                ?.takeIf { it in 0..14 } ?: 0
             return SongNote(o.optInt("time", 0), key)
         }
     }

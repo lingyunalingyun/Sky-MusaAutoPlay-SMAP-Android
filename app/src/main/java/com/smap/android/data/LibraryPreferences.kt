@@ -37,4 +37,11 @@ class LibraryPreferences(context: Context) {
     fun saveSpeed(speed: Float, random: Boolean) {
         prefs.edit().putFloat("speed", speed).putBoolean("random_speed", random).apply()
     }
+
+    fun removeSong(fileName: String): Set<String> {
+        val updatedFavorites = favorites() - fileName
+        prefs.edit().putStringSet("favorites", updatedFavorites).apply()
+        savePlaylist(playlist() - fileName)
+        return updatedFavorites
+    }
 }
