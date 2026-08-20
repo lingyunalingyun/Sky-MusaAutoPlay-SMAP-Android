@@ -1001,10 +1001,10 @@ private fun SettingsPanel(
         else -> "深色模式"
     }
 
-    Row(Modifier.fillMaxSize().padding(24.dp)) {
+    Row(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp)) {
         Column(Modifier.weight(1f).fillMaxHeight()) {
             Text("设置", color = Color.White, fontSize = 25.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(10.dp))
             SettingsRow("主题", themeName, onClick = { showThemes = true })
             Spacer(Modifier.height(8.dp))
             SettingsRow("音高", "恢复所有音色的默认音高", onClick = onResetPitch)
@@ -1016,17 +1016,17 @@ private fun SettingsPanel(
 
         Column(Modifier.weight(1f).fillMaxHeight()) {
             Text("软件信息", color = Color.White, fontSize = 25.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(10.dp))
             Text("光遇-Musa 自动弹琴", color = Color.White, fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-            Spacer(Modifier.height(3.dp))
+            Spacer(Modifier.height(2.dp))
             Text("Sky-MusaAutoPlay (SMAP)", color = SecondaryText, fontSize = 12.sp)
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(9.dp))
             Text("Android 版本：v0.1.0", color = Color.White, fontSize = 12.sp)
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             Text("软件作者：LingYunALingYun", color = Color.White, fontSize = 12.sp)
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(9.dp))
             SettingsRow("开源仓库", "在浏览器中打开", onClick = onRepository)
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             SettingsRow("开源协议", "GNU GPL v3.0", onClick = onLicense)
         }
     }
@@ -1049,7 +1049,7 @@ private fun SettingsRow(label: String, value: String, onClick: (() -> Unit)? = n
     Row(
         Modifier
             .fillMaxWidth()
-            .height(44.dp)
+            .height(38.dp)
             .background(CardColor, RoundedCornerShape(8.dp))
             .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
             .let { modifier -> if (onClick != null) modifier.clickable(onClick = onClick) else modifier }
