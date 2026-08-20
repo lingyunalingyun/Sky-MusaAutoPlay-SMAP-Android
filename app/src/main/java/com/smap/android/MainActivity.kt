@@ -30,6 +30,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,6 +69,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Path
@@ -263,7 +265,8 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
     fun startPlayback(
         item: LibraryItem,
         fromPlaylist: Boolean,
-        queueSnapshot: List<LibraryItem> = playlist
+        queueSnapshot: List<LibraryItem> = playlist,
+        startPositionMs: Long = 0
     ) {
         val token = ++playToken
         playerEngine.stop()
@@ -274,12 +277,13 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
         nowPlaying = item
         isPlaying = true
         isPaused = false
-        positionMs = 0
+        positionMs = startPositionMs
         playerEngine.play(
             song = item.song,
             keys = List(15) { KeyPoint(0f, 0f) },
             screenW = 0,
             screenH = 0,
+            startPositionMs = startPositionMs,
             sendScreenTaps = false,
             onNoteFired = { key ->
                 audioEngine.play(key)
@@ -407,6 +411,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
             positionMs = positionMs,
             playMode = playMode,
             speedLabel = if (randomSpeed) "随机速度" else "${speed}×",
+            favorite = (nowPlaying ?: selectedItem)?.fileName in favorites,
             onPlay = {
                 if (isPlaying && !isPaused) {
                     playerEngine.pause()
@@ -436,7 +441,20 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                 preferences.savePlayMode(playMode)
             },
             onSpeed = { showSpeed = true },
-            onPlaylist = { showPlaylist = true }
+            onPlaylist = { showPlaylist = true },
+            onFavorite = {
+                (nowPlaying ?: selectedItem)?.let { favorites = preferences.toggleFavorite(it.fileName) }
+            },
+            onSeek = { fraction ->
+                val current = nowPlaying ?: return@BottomBar
+                val target = (current.song.durationMs * fraction).toLong()
+                val wasPaused = isPaused
+                startPlayback(current, true, playlist, target)
+                if (wasPaused) {
+                    playerEngine.pause()
+                    isPaused = true
+                }
+            }
         )
     }
 

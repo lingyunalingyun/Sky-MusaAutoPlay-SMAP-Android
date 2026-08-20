@@ -61,6 +61,7 @@ class PlayerEngine(private val scope: CoroutineScope) {
         keys: List<KeyPoint>,
         screenW: Int,
         screenH: Int,
+        startPositionMs: Long = 0,
         sendScreenTaps: Boolean = true,
         onNoteFired: (Int) -> Unit = {},
         onProgress: (Long) -> Unit = {},
@@ -75,8 +76,8 @@ class PlayerEngine(private val scope: CoroutineScope) {
         paused = false
         job = scope.launch(Dispatchers.Default) {
             val notes = song.songNotes.sortedBy { it.time }
-            var index = 0
-            var songMs = 0.0
+            var index = notes.indexOfFirst { it.time >= startPositionMs }.let { if (it < 0) notes.size else it }
+            var songMs = startPositionMs.coerceAtLeast(0).toDouble()
             var lastRealMs = SystemClock.elapsedRealtime()
             var randomCountdown = 0
             var currentSpeed = speed
