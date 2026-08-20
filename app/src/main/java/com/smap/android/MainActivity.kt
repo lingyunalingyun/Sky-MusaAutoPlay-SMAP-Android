@@ -746,23 +746,35 @@ private fun CloudLibrary(api: CloudApi, onDownloaded: suspend (CloudSheet) -> Un
             sheets.isEmpty() -> EmptyMessage("没有匹配的云端曲谱")
             else -> LazyColumn(Modifier.weight(1f).padding(horizontal = 6.dp, vertical = 5.dp)) {
                 items(sheets, key = { it.id }) { sheet ->
-                    Surface(Modifier.fillMaxWidth().height(78.dp), shape = RoundedCornerShape(6.dp), color = CardColor) {
-                        Row(Modifier.padding(horizontal = 9.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(Modifier.fillMaxWidth().height(72.dp), color = Color.Transparent) {
+                        Row(Modifier.padding(horizontal = 3.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                             CloudCover(sheet, api)
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.width(9.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(sheet.title, color = Color.White, fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text("作者：${sheet.artist.ifBlank { "未知作者" }} · 做谱者：${sheet.transcribedBy.ifBlank { "未知做谱者" }}", color = SecondaryText, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text("难度：${"★".repeat(sheet.difficulty.coerceIn(0, 5)).ifBlank { "未标注" }}   下载：${sheet.downloads}", color = SecondaryText, fontSize = 8.sp, maxLines = 1)
+                                Text(sheet.title, color = Color.White, fontSize = 13.sp, lineHeight = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(sheet.artist.ifBlank { "未知作者" }, color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(sheet.transcribedBy.ifBlank { "未知做谱者" }, color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                    val stars = "★".repeat(sheet.difficulty.coerceIn(0, 5))
+                                    if (stars.isNotEmpty()) {
+                                        Spacer(Modifier.width(5.dp))
+                                        Text(stars, color = FavoriteGold, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1)
+                                    }
+                                }
                             }
-                            TextButton(enabled = downloadingId == null, onClick = {
+                            Text("↓${sheet.downloads}", color = SecondaryText, fontSize = 9.sp)
+                            Spacer(Modifier.width(6.dp))
+                            CloudDownloadIcon(
+                                downloading = downloadingId == sheet.id,
+                                enabled = downloadingId == null,
+                                modifier = Modifier.size(30.dp).clickable(enabled = downloadingId == null) {
                                 downloadingId = sheet.id
                                 scope.launch {
                                     runCatching { onDownloaded(sheet) }
                                         .onFailure { error = it.message ?: "下载失败" }
                                     downloadingId = null
                                 }
-                            }) { Text(if (downloadingId == sheet.id) "下载中" else "下载") }
+                            })
                         }
                     }
                     Spacer(Modifier.height(3.dp))
@@ -780,9 +792,25 @@ private fun CloudCover(sheet: CloudSheet, api: CloudApi) {
         bytes = withContext(Dispatchers.IO) { api.cover(sheet) }
     }
     val cover = remember(bytes) { bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() } }
-    Box(Modifier.size(50.dp).background(CloudGreen, RoundedCornerShape(6.dp)).border(1.dp, BorderColor, RoundedCornerShape(6.dp)), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(46.dp).background(CardColor, RoundedCornerShape(6.dp)).border(1.dp, BorderColor, RoundedCornerShape(6.dp)), contentAlignment = Alignment.Center) {
         if (cover != null) Image(cover, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        else Text("☁", color = Color.White, fontSize = 20.sp)
+        else Text("♪", color = SecondaryText, fontSize = 18.sp)
+    }
+}
+
+@Composable
+private fun CloudDownloadIcon(downloading: Boolean, enabled: Boolean, modifier: Modifier = Modifier) {
+    Canvas(modifier.padding(5.dp)) {
+        val color = if (enabled) Color(0xFFE1E1E6) else SecondaryText
+        val stroke = 2.dp.toPx()
+        if (downloading) {
+            drawCircle(color, radius = size.minDimension * 0.32f, style = Stroke(stroke))
+        } else {
+            drawLine(color, androidx.compose.ui.geometry.Offset(size.width * .5f, size.height * .12f), androidx.compose.ui.geometry.Offset(size.width * .5f, size.height * .65f), stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            drawLine(color, androidx.compose.ui.geometry.Offset(size.width * .28f, size.height * .45f), androidx.compose.ui.geometry.Offset(size.width * .5f, size.height * .67f), stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            drawLine(color, androidx.compose.ui.geometry.Offset(size.width * .72f, size.height * .45f), androidx.compose.ui.geometry.Offset(size.width * .5f, size.height * .67f), stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            drawLine(color, androidx.compose.ui.geometry.Offset(size.width * .2f, size.height * .86f), androidx.compose.ui.geometry.Offset(size.width * .8f, size.height * .86f), stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        }
     }
 }
 
@@ -969,10 +997,10 @@ fun SongCard(
                 }
             }
             Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(song.name, color = Color.White, fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("作者：${song.author ?: "未知作者"}", color = SecondaryText, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("做谱者：${song.transcribedBy ?: "未知做谱者"}", color = SecondaryText, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+                Text(song.name, color = Color.White, fontSize = 13.sp, lineHeight = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(song.author ?: "未知作者", color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(song.transcribedBy ?: "未知做谱者", color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.width(6.dp))
             if (selected) {
@@ -1149,7 +1177,7 @@ fun BottomBar(
                     Column(Modifier.width(155.dp)) {
                         Text(item?.song?.name ?: "未有正在播放的歌曲", color = Color.White, fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (item != null) {
-                            Text("作者：${item.song.author ?: "未知作者"} · 做谱者：${item.song.transcribedBy ?: "未知做谱者"}", color = SecondaryText, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${item.song.author ?: "未知"} · ${item.song.transcribedBy ?: "未知"}", color = SecondaryText, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                     if (item != null) FavoriteStarIcon(favorite, Modifier.size(30.dp).clickable(onClick = onFavorite).padding(4.dp))
@@ -1393,8 +1421,8 @@ fun PlaylistDialog(
                                             }
                                         }
                                     }
-                                    Text("作者：${item.song.author ?: "未知作者"}", color = SecondaryText, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text("做谱者：${item.song.transcribedBy ?: "未知做谱者"}", color = SecondaryText, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(item.song.author ?: "未知", color = SecondaryText, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(item.song.transcribedBy ?: "未知", color = SecondaryText, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                                 FavoriteStarIcon(
                                     filled = item.fileName in favorites,
