@@ -38,6 +38,22 @@ class LibraryPreferences(context: Context) {
         prefs.edit().putFloat("speed", speed).putBoolean("random_speed", random).apply()
     }
 
+    fun instrument(): String = prefs.getString("instrument", "Piano") ?: "Piano"
+
+    fun saveInstrument(name: String) { prefs.edit().putString("instrument", name).apply() }
+
+    fun pitch(instrument: String): Int = prefs.getInt("pitch_$instrument", defaultPitch(instrument)).coerceIn(-24, 24)
+
+    fun savePitch(instrument: String, semitones: Int) {
+        prefs.edit().putInt("pitch_$instrument", semitones.coerceIn(-24, 24)).apply()
+    }
+
+    private fun defaultPitch(instrument: String): Int = when (instrument) {
+        "Cello", "Horn", "Handpan", "GoldHandpan", "Dundun", "APBell1", "APBell2" -> -12
+        "Contrabass", "4thAnnivBass", "GoldDundun" -> -24
+        else -> 0
+    }
+
     fun removeSong(fileName: String): Set<String> {
         val updatedFavorites = favorites() - fileName
         prefs.edit().putStringSet("favorites", updatedFavorites).apply()
