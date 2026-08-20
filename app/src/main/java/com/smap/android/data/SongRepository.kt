@@ -56,6 +56,17 @@ class SongRepository(private val context: Context) {
         LibraryItem(target.name, song, extractCover(target.name, bytes))
     }
 
+    fun importDownloaded(name: String, bytes: ByteArray): Result<LibraryItem> = runCatching {
+        val safeName = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "云端曲谱" }
+        val fileName = if (safeName.endsWith(".txt", true) || safeName.endsWith(".json", true)) safeName else "$safeName.txt"
+        val song = parse(fileName, bytes) ?: error("下载的曲谱格式无效")
+        importedDir.mkdirs()
+        val target = uniqueFile(fileName)
+        target.writeBytes(bytes)
+        unhide(target.name)
+        LibraryItem(target.name, song, extractCover(target.name, bytes))
+    }
+
     fun importMidi(
         bytes: ByteArray,
         name: String,

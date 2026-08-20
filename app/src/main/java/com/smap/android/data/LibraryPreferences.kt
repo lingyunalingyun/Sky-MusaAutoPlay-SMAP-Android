@@ -52,6 +52,14 @@ class LibraryPreferences(context: Context) {
 
     fun saveCave(enabled: Boolean) { prefs.edit().putBoolean("cave", enabled).apply() }
 
+    fun lastSong(): String? = prefs.getString("last_song", null)
+
+    fun lastPosition(): Long = prefs.getLong("last_position", 0L).coerceAtLeast(0L)
+
+    fun savePlayback(fileName: String, positionMs: Long) {
+        prefs.edit().putString("last_song", fileName).putLong("last_position", positionMs.coerceAtLeast(0L)).apply()
+    }
+
     private fun defaultPitch(instrument: String): Int = when (instrument) {
         "Cello", "Horn", "Handpan", "GoldHandpan", "Dundun", "APBell1", "APBell2" -> -12
         "Contrabass", "4thAnnivBass", "GoldDundun" -> -24

@@ -82,6 +82,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
@@ -90,6 +91,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.smap.android.data.LibraryItem
 import com.smap.android.data.LibraryPreferences
+import com.smap.android.cloud.CloudApi
+import com.smap.android.cloud.CloudSheet
+import com.smap.android.cloud.CloudUser
 import com.smap.android.data.SongRepository
 import com.smap.android.engine.AudioEngine
 import com.smap.android.engine.KeyPoint
@@ -196,6 +200,11 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val repository = remember { SongRepository(context) }
     val preferences = remember { LibraryPreferences(context) }
+    val cloudApi = remember { CloudApi(context) }
+    var cloudUser by remember { mutableStateOf(cloudApi.user) }
+    var showLogin by remember { mutableStateOf(false) }
+    var loginBusy by remember { mutableStateOf(false) }
+    var loginError by remember { mutableStateOf<String?>(null) }
     var favorites by remember { mutableStateOf(preferences.favorites()) }
     var playlistFiles by remember { mutableStateOf(preferences.playlist()) }
     var playMode by remember { mutableIntStateOf(preferences.playMode()) }
@@ -203,6 +212,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
     var randomSpeed by remember { mutableStateOf(preferences.randomSpeed()) }
     var cave by remember { mutableStateOf(preferences.cave()) }
     var playToken by remember { mutableIntStateOf(0) }
+    var lastPersistedBucket by remember { mutableStateOf(-1L) }
     val scope = rememberCoroutineScope()
     val audioEngine = remember { AudioEngine(context) }
     val playerEngine = remember { PlayerEngine(scope) }
@@ -262,6 +272,13 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
 
     LaunchedEffect(Unit) {
         items = withContext(Dispatchers.IO) { repository.loadSongs() }
+        preferences.lastSong()?.let { fileName ->
+            items.find { it.fileName == fileName }?.let { restored ->
+                selectedItem = restored
+                nowPlaying = restored
+                positionMs = preferences.lastPosition().coerceAtMost(restored.song.durationMs)
+            }
+        }
     }
 
     val nameComparator = remember { Comparator<LibraryItem> { a, b -> Collator.getInstance().compare(a.song.name, b.song.name) } }
@@ -315,7 +332,14 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                     keyFlashes[key]++
                 }
             },
-            onProgress = { progress -> scope.launch { positionMs = progress } },
+            onProgress = { progress -> scope.launch {
+                positionMs = progress
+                val bucket = progress / 2_000
+                if (bucket != lastPersistedBucket) {
+                    lastPersistedBucket = bucket
+                    preferences.savePlayback(item.fileName, progress)
+                }
+            } },
             onFinished = {
                 scope.launch {
                     if (fromPlaylist) {
@@ -408,10 +432,26 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                             item { EmptyMessage(if (navTab == 2) "还没有收藏曲谱" else "没有匹配的曲谱") }
                         }
                     }
+                } else if (navTab == 1) {
+                    CloudLibrary(
+                        api = cloudApi,
+                        onDownloaded = { sheet ->
+                            withContext(Dispatchers.IO) {
+                                cloudApi.download(sheet).getOrThrow().let { repository.importDownloaded(sheet.title, it).getOrThrow() }
+                            }
+                            items = withContext(Dispatchers.IO) { repository.loadSongs() }
+                            Toast.makeText(context, "已下载到本地曲库「${sheet.title}」", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                } else if (navTab == 4) {
+                    ProfilePanel(
+                        user = cloudUser,
+                        onLogin = { loginError = null; showLogin = true },
+                        onLogout = { cloudApi.logout(); cloudUser = null },
+                        onHome = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(CloudApi.BASE))) }
+                    )
                 } else {
                     val message = when (navTab) {
-                        1 -> "云端曲库将在下一阶段接入"
-                        4 -> "尚未登录缪斯树屋账号"
                         5 -> "SMAP Android 0.1.0\n本地曲库与练习功能已启用"
                         else -> ""
                     }
@@ -444,11 +484,15 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                 if (isPlaying && !isPaused) {
                     playerEngine.pause()
                     isPaused = true
+                    (nowPlaying ?: selectedItem)?.let { preferences.savePlayback(it.fileName, positionMs) }
                 } else if (isPlaying) {
                     playerEngine.resume()
                     isPaused = false
                 }
-                else if (playlist.isNotEmpty()) startPlayback(nowPlaying?.takeIf { current -> playlist.any { it.fileName == current.fileName } } ?: playlist.first(), true)
+                else if (playlist.isNotEmpty()) {
+                    val target = nowPlaying?.takeIf { current -> playlist.any { it.fileName == current.fileName } } ?: playlist.first()
+                    startPlayback(target, true, playlist, if (target.fileName == nowPlaying?.fileName) positionMs else 0L)
+                }
                 else Toast.makeText(context, "播放列表为空，请长按歌曲添加", Toast.LENGTH_SHORT).show()
             },
             onPrevious = {
@@ -486,6 +530,24 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                 if (wasPaused) {
                     playerEngine.pause()
                     isPaused = true
+                }
+            }
+        )
+    }
+
+    if (showLogin) {
+        CloudLoginDialog(
+            busy = loginBusy,
+            error = loginError,
+            onDismiss = { if (!loginBusy) showLogin = false },
+            onSubmit = { username, password ->
+                loginBusy = true
+                loginError = null
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) { cloudApi.login(username, password) }
+                    loginBusy = false
+                    result.onSuccess { cloudUser = it; showLogin = false }
+                        .onFailure { loginError = it.message ?: "登录失败" }
                 }
             }
         )
@@ -626,6 +688,160 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
 }
 
 /** 左侧边栏 */
+@Composable
+private fun CloudLibrary(api: CloudApi, onDownloaded: suspend (CloudSheet) -> Unit) {
+    var query by remember { mutableStateOf("") }
+    var appliedQuery by remember { mutableStateOf("") }
+    var sortMode by remember { mutableIntStateOf(1) }
+    var difficulty by remember { mutableIntStateOf(0) }
+    var total by remember { mutableIntStateOf(0) }
+    var refresh by remember { mutableIntStateOf(0) }
+    var loading by remember { mutableStateOf(false) }
+    var downloadingId by remember { mutableStateOf<Int?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var sheets by remember { mutableStateOf<List<CloudSheet>>(emptyList()) }
+    val scope = rememberCoroutineScope()
+    val sortKeys = listOf("newest", "newest", "hot", "downloads")
+    val sortLabels = listOf("A-Z", "上传时间", "点赞", "下载量")
+
+    LaunchedEffect(appliedQuery, sortMode, difficulty, refresh) {
+        loading = true
+        error = null
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                val first = api.list(appliedQuery, sortKeys[sortMode], difficulty, 1, 100).getOrThrow()
+                if (first.pages <= 1) first else {
+                    val all = first.items.toMutableList()
+                    for (nextPage in 2..first.pages) {
+                        all += api.list(appliedQuery, sortKeys[sortMode], difficulty, nextPage, 100).getOrThrow().items
+                    }
+                    first.copy(items = all)
+                }
+            }
+        }
+        result.onSuccess { response ->
+            total = response.total
+            sheets = if (sortMode == 0) response.items.sortedWith(compareBy(Collator.getInstance()) { it.title }) else response.items
+        }.onFailure { error = it.message ?: "加载失败"; sheets = emptyList() }
+        loading = false
+    }
+
+    Column(Modifier.fillMaxSize().padding(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { CloudInput(query, { query = it }, "搜索云端曲谱") }
+            Spacer(Modifier.width(4.dp))
+            FilterChip("搜索") { appliedQuery = query }
+        }
+        Spacer(Modifier.height(5.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            FilterChip(sortLabels[sortMode], Modifier.weight(1f)) { sortMode = (sortMode + 1) % sortLabels.size }
+            FilterChip(if (difficulty == 0) "全部难度" else "★".repeat(difficulty), Modifier.weight(1f)) { difficulty = (difficulty + 1) % 6 }
+            FilterChip("刷新", Modifier.weight(0.7f)) { refresh++ }
+        }
+        Spacer(Modifier.height(5.dp))
+        when {
+            loading -> EmptyMessage("正在加载云端曲库…")
+            error != null -> EmptyMessage(error!!)
+            sheets.isEmpty() -> EmptyMessage("没有匹配的云端曲谱")
+            else -> LazyColumn(Modifier.weight(1f)) {
+                items(sheets, key = { it.id }) { sheet ->
+                    Surface(Modifier.fillMaxWidth().height(68.dp), shape = RoundedCornerShape(6.dp), color = CardColor) {
+                        Row(Modifier.padding(horizontal = 9.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(45.dp).background(CloudGreen, RoundedCornerShape(6.dp)), contentAlignment = Alignment.Center) {
+                                Text("☁", color = Color.White, fontSize = 20.sp)
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(sheet.title, color = Color.White, fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(sheet.artist.ifBlank { "未知作者" }, color = SecondaryText, fontSize = 9.sp, maxLines = 1)
+                                Text("${"★".repeat(sheet.difficulty.coerceIn(0, 5))}  BPM ${sheet.bpm}  ↓${sheet.downloads}  ♥${sheet.likes}", color = SecondaryText, fontSize = 8.sp, maxLines = 1)
+                            }
+                            TextButton(enabled = downloadingId == null, onClick = {
+                                downloadingId = sheet.id
+                                scope.launch {
+                                    runCatching { onDownloaded(sheet) }
+                                        .onFailure { error = it.message ?: "下载失败" }
+                                    downloadingId = null
+                                }
+                            }) { Text(if (downloadingId == sheet.id) "下载中" else "下载") }
+                        }
+                    }
+                    Spacer(Modifier.height(3.dp))
+                }
+            }
+        }
+        Text("共 $total 首", color = SecondaryText, fontSize = 9.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 3.dp))
+    }
+}
+
+@Composable
+private fun ProfilePanel(user: CloudUser?, onLogin: () -> Unit, onLogout: () -> Unit, onHome: () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(76.dp).background(CardColor, CircleShape).border(1.dp, BorderColor, CircleShape), contentAlignment = Alignment.Center) {
+                Text(user?.username?.firstOrNull()?.uppercase() ?: "?", color = Color.White, fontSize = 30.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(user?.username ?: "尚未登录", color = Color.White, fontSize = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            Text(if (user == null) "登录缪斯树屋账号" else "已登录 · UID ${user.id}", color = SecondaryText, fontSize = 11.sp)
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (user == null) FilterChip("登录", Modifier.width(120.dp), onLogin)
+                else {
+                    FilterChip("个人主页", Modifier.width(120.dp), onHome)
+                    FilterChip("退出账号", Modifier.width(120.dp), onLogout)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CloudLoginDialog(
+    busy: Boolean,
+    error: String?,
+    onDismiss: () -> Unit,
+    onSubmit: (String, String) -> Unit
+) {
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.width(380.dp), shape = RoundedCornerShape(12.dp), color = PanelColor, border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)) {
+            Column(Modifier.padding(18.dp)) {
+                Text("登录 — 缪斯树屋", color = Color.White, fontSize = 20.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                Spacer(Modifier.height(14.dp))
+                CloudInput(username, { username = it }, "用户名或邮箱")
+                Spacer(Modifier.height(8.dp))
+                CloudInput(password, { password = it }, "密码", true)
+                error?.let { Text(it, color = Color(0xFFFF6B6B), fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp)) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(enabled = !busy, onClick = onDismiss) { Text("取消") }
+                    TextButton(enabled = !busy && username.isNotBlank() && password.isNotBlank(), onClick = { onSubmit(username.trim(), password) }) {
+                        Text(if (busy) "登录中…" else "登录")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CloudInput(value: String, onChange: (String) -> Unit, hint: String, password: Boolean = false) {
+    BasicTextField(
+        value = value,
+        onValueChange = onChange,
+        singleLine = true,
+        visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+        textStyle = TextStyle(color = Color.White, fontSize = 13.sp),
+        cursorBrush = SolidColor(AccentColor),
+        modifier = Modifier.fillMaxWidth().height(42.dp).background(CardColor, RoundedCornerShape(7.dp)).border(1.dp, BorderColor, RoundedCornerShape(7.dp)),
+        decorationBox = { input -> Box(Modifier.fillMaxSize().padding(horizontal = 10.dp), contentAlignment = Alignment.CenterStart) {
+            if (value.isEmpty()) Text(hint, color = SecondaryText, fontSize = 12.sp)
+            input()
+        } }
+    )
+}
+
 @Composable
 fun Sidebar(selected: Int, onSelect: (Int) -> Unit) {
     Column(
