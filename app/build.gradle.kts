@@ -23,16 +23,6 @@ android {
         }
     }
 
-    // Debug 签名密钥放工作区（沙箱约束：默认 ~/.android/debug.keystore 不可写）
-    signingConfigs {
-        getByName("debug") {
-            storeFile = file("D:/DSH_Works/android-sdk/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-    }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
