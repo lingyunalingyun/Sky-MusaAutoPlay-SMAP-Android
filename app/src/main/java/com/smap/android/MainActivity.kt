@@ -103,6 +103,7 @@ import com.smap.android.i18n.tr
 import com.smap.android.i18n.trf
 import com.smap.android.midi.MidiImporter
 import com.smap.android.service.FloatService
+import com.smap.android.service.SMAPAccessibilityService
 import com.smap.android.ui.SMAPPlayButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -159,6 +160,7 @@ private data class PendingMidi(
 
 class MainActivity : ComponentActivity() {
     private var startFloatAfterPermission = false
+    private var startFloatAfterAccessibility = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -169,16 +171,33 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             SMAPTheme {
-                MainScreen(onGamePerform = ::startGamePerform)
+                MainScreen(onGameModeChange = ::setGameMode)
             }
         }
     }
 
     override fun onResume() {
         super.onResume()
+        if (startFloatAfterAccessibility && SMAPAccessibilityService.isEnabled()) {
+            startFloatAfterAccessibility = false
+            startGamePerform()
+        }
         if (startFloatAfterPermission && Settings.canDrawOverlays(this)) {
             startFloatAfterPermission = false
             FloatService.start(this)
+        }
+    }
+
+    private fun setGameMode(enabled: Boolean) {
+        if (!enabled) {
+            startFloatAfterPermission = false
+            startFloatAfterAccessibility = false
+            FloatService.stop(this)
+        } else if (!SMAPAccessibilityService.isEnabled()) {
+            startFloatAfterAccessibility = true
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        } else {
+            startGamePerform()
         }
     }
 
@@ -211,7 +230,7 @@ fun SMAPTheme(content: @Composable () -> Unit) {
 }
 
 @Composable
-fun MainScreen(onGamePerform: () -> Unit = {}) {
+fun MainScreen(onGameModeChange: (Boolean) -> Unit = {}) {
     var items by remember { mutableStateOf<List<LibraryItem>>(emptyList()) }
     var selectedItem by remember { mutableStateOf<LibraryItem?>(null) }
     var nowPlaying by remember { mutableStateOf<LibraryItem?>(null) }
@@ -230,6 +249,11 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
     var query by remember { mutableStateOf("") }
     var sortMode by remember { mutableIntStateOf(0) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    var gameMode by remember { mutableStateOf(FloatService.isRunning()) }
+    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
+    val accessibilityDisclosurePreferences = remember {
+        context.getSharedPreferences("accessibility_disclosure", android.content.Context.MODE_PRIVATE)
+    }
     val repository = remember { SongRepository(context) }
     val preferences = remember { LibraryPreferences(context) }
     val cloudApi = remember { CloudApi(context) }
@@ -514,6 +538,9 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                         },
                         onLicense = {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.gnu.org/licenses/gpl-3.0.html")))
+                        },
+                        onPrivacyPolicy = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lingyunalingyun/Sky-MusaAutoPlay-SMAP-Android/blob/main/PRIVACY_POLICY.md")))
                         }
                     )
                 } else {
@@ -546,6 +573,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
             instrumentLabel = instrument,
             pitchLabel = pitch,
             cave = cave,
+            gameMode = gameMode,
             favorite = (nowPlaying ?: selectedItem)?.fileName in favorites,
             onPlay = {
                 if (isPlaying && !isPaused) {
@@ -585,6 +613,17 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                 cave = !cave
                 preferences.saveCave(cave)
             },
+            onGameMode = {
+                if (gameMode) {
+                    gameMode = false
+                    onGameModeChange(false)
+                } else if (accessibilityDisclosurePreferences.getBoolean("accepted", false)) {
+                    gameMode = true
+                    onGameModeChange(true)
+                } else {
+                    showAccessibilityDisclosure = true
+                }
+            },
             onPlaylist = { showPlaylist = true },
             onFavorite = {
                 (nowPlaying ?: selectedItem)?.let { favorites = preferences.toggleFavorite(it.fileName) }
@@ -597,6 +636,30 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                 if (wasPaused) {
                     playerEngine.pause()
                     isPaused = true
+                }
+            }
+        )
+    }
+
+    if (showAccessibilityDisclosure) {
+        AlertDialog(
+            onDismissRequest = { showAccessibilityDisclosure = false },
+            containerColor = PanelColor,
+            title = { Text(tr("游戏模式需要无障碍权限"), color = Color.White) },
+            text = { Text(tr("无障碍权限用途说明"), color = Color.White) },
+            dismissButton = {
+                TextButton(onClick = { showAccessibilityDisclosure = false }) {
+                    Text(tr("拒绝"))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    accessibilityDisclosurePreferences.edit().putBoolean("accepted", true).apply()
+                    showAccessibilityDisclosure = false
+                    gameMode = true
+                    onGameModeChange(true)
+                }) {
+                    Text(tr("同意并前往设置"))
                 }
             }
         )
@@ -1005,7 +1068,8 @@ private fun SettingsPanel(
     onResetPitch: () -> Unit,
     onCheckUpdate: () -> Unit,
     onRepository: () -> Unit,
-    onLicense: () -> Unit
+    onLicense: () -> Unit,
+    onPrivacyPolicy: () -> Unit
 ) {
     var showThemes by remember { mutableStateOf(false) }
     var showLanguages by remember { mutableStateOf(false) }
@@ -1050,6 +1114,8 @@ private fun SettingsPanel(
             SettingsRow(tr("开源仓库"), tr("在浏览器中打开"), onClick = onRepository)
             Spacer(Modifier.height(6.dp))
             SettingsRow(tr("开源协议"), "GNU GPL v3.0", onClick = onLicense)
+            Spacer(Modifier.height(6.dp))
+            SettingsRow(tr("隐私政策"), tr("在浏览器中打开"), onClick = onPrivacyPolicy)
         }
     }
 
@@ -1297,6 +1363,7 @@ fun BottomBar(
     instrumentLabel: String,
     pitchLabel: Int,
     cave: Boolean,
+    gameMode: Boolean,
     favorite: Boolean,
     onPlay: () -> Unit,
     onPrevious: () -> Unit,
@@ -1306,6 +1373,7 @@ fun BottomBar(
     onInstrument: () -> Unit,
     onPitch: () -> Unit,
     onCave: () -> Unit,
+    onGameMode: () -> Unit,
     onPlaylist: () -> Unit,
     onFavorite: () -> Unit,
     onSeek: (Float) -> Unit,
@@ -1379,6 +1447,8 @@ fun BottomBar(
                     Spacer(Modifier.weight(1f))
                     TransportVector("cave", Modifier.size(32.dp).clickable(onClick = onCave).padding(5.dp), cave)
                     Spacer(Modifier.width(4.dp))
+                    PlayerPill(tr("游戏模式"), onGameMode, gameMode)
+                    Spacer(Modifier.width(6.dp))
                     PlayerPill("${tr("音色")}:${localizedInstrument(instrumentLabel)}", onInstrument)
                     Spacer(Modifier.width(6.dp))
                     PlayerPill("${tr("音高")}:${if (pitchLabel > 0) "+" else ""}$pitchLabel ${noteName(pitchLabel)}", onPitch)
@@ -1391,12 +1461,16 @@ fun BottomBar(
 }
 
 @Composable
-private fun PlayerPill(label: String, onClick: () -> Unit) {
+private fun PlayerPill(label: String, onClick: () -> Unit, active: Boolean = false) {
     Text(
         label,
-        color = SecondaryText,
+        color = if (active) Color.White else SecondaryText,
         fontSize = 9.sp,
-        modifier = Modifier.border(1.dp, BorderColor, RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 4.dp)
+        modifier = Modifier
+            .background(if (active) AccentColor else Color.Transparent, RoundedCornerShape(12.dp))
+            .border(1.dp, if (active) AccentColor else BorderColor, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
     )
 }
 

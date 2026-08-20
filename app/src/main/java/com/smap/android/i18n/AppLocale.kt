@@ -68,6 +68,7 @@ object AppLocale {
         "开源仓库" to arrayOf("开源仓库", "開源倉庫", "Source code", "ソースコード"),
         "在浏览器中打开" to arrayOf("在浏览器中打开", "在瀏覽器中開啟", "Open in browser", "ブラウザで開く"),
         "开源协议" to arrayOf("开源协议", "開源協議", "License", "ライセンス"),
+        "隐私政策" to arrayOf("隐私政策", "隱私政策", "Privacy policy", "プライバシーポリシー"),
         "所有音色的音高已恢复默认" to arrayOf("所有音色的音高已恢复默认", "所有音色的音高已恢復預設", "All instrument pitches were reset", "すべての楽器のピッチをリセットしました"),
         "随机速度" to arrayOf("随机速度", "隨機速度", "Random speed", "ランダム速度"),
         "选择音色" to arrayOf("选择音色", "選擇音色", "Choose instrument", "音色を選択"),

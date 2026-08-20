@@ -25,4 +25,6 @@ APK 输出：`app/build/outputs/apk/debug/app-debug.apk`
 
 本项目采用 [GNU General Public License v3.0](LICENSE) 开源。
 
+隐私政策见 [PRIVACY_POLICY.md](PRIVACY_POLICY.md)。
+
 Copyright © 2026 LingYunALingYun

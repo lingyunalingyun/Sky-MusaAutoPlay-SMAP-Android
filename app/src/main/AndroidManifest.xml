@@ -50,7 +50,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="floating_window_for_game_perform" />
+                android:value="User-initiated Game Mode keeps the floating score controls available over Sky during performance" />
         </service>
     </application>
 

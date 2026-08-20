@@ -49,6 +49,7 @@ class FloatService : Service() {
     companion object {
         const val CHANNEL_ID = "smap_float"
         const val NOTIF_ID = 1001
+        private const val ACTION_STOP = "com.smap.android.action.STOP_GAME_MODE"
 
         @Volatile
         var instance: FloatService? = null
@@ -96,6 +97,10 @@ class FloatService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (ballView == null) addBall()
         return START_STICKY
     }
@@ -123,11 +128,18 @@ class FloatService : Service() {
         val pi = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
+        val stopPi = PendingIntent.getService(
+            this,
+            1,
+            Intent(this, FloatService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         val notif = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(tr("SMAP 演奏"))
             .setContentText(tr("悬浮球运行中，点击展开选曲面板"))
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(pi)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, tr("关闭"), stopPi)
             .setOngoing(true)
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
