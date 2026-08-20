@@ -102,7 +102,6 @@ object MidiImporter {
         // 4. 自动移调: 白键率最高 + 中位音八度居中
         val rawNotes = notes.map { it.second }
         val semitone = if (autoAlign) suggestSemitone(rawNotes) else 0
-        val med = rawNotes.sorted()[rawNotes.size / 2] + semitone
         val oct = if (autoAlign) centerOctave(rawNotes, semitone) else octaveShift
         val shift = semitone + oct * 12
 
