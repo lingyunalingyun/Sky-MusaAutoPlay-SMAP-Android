@@ -874,6 +874,7 @@ fun PlaylistDialog(
 ) {
     var confirmClear by remember { mutableStateOf(false) }
     var moreItem by remember { mutableStateOf<LibraryItem?>(null) }
+    var infoItem by remember { mutableStateOf<LibraryItem?>(null) }
     var drawerVisible by remember { mutableStateOf(false) }
     val drawerScope = rememberCoroutineScope()
     val openEase = remember { Easing { t -> 1f - (1f - t) * (1f - t) * (1f - t) } }
@@ -944,23 +945,32 @@ fun PlaylistDialog(
                     LazyColumn(Modifier.fillMaxSize().padding(start = 8.dp, end = 40.dp, top = 6.dp, bottom = 6.dp)) {
                     items(items, key = { it.fileName }) { item ->
                         val isCurrent = nowPlaying?.fileName == item.fileName
+                        val cover = remember(item.coverBytes) {
+                            item.coverBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+                        }
                         Row(
                                 Modifier
                                     .fillMaxWidth()
+                                    .height(62.dp)
                                     .background(if (isCurrent) Color(0xFF303033) else Color(0xFF292929), RoundedCornerShape(5.dp))
                                     .clickable { onPlay(item) }
-                                    .padding(8.dp),
+                                    .padding(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                                 Box(
-                                    Modifier.size(56.dp).background(Color(0xFFC5C5C5), RoundedCornerShape(3.dp)),
+                                    Modifier.size(46.dp).background(Color(0xFF353538), RoundedCornerShape(6.dp)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(
-                                        if (isCurrent && playing && !paused) "Ⅱ" else if (isCurrent) "▶" else "",
-                                        color = Color(0xFFE1E1E6),
-                                        fontSize = 22.sp
-                                    )
+                                    if (cover != null) {
+                                        Image(cover, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                    } else {
+                                        Text("♪", color = SecondaryText, fontSize = 18.sp)
+                                    }
+                                    if (isCurrent) {
+                                        Box(Modifier.fillMaxSize().background(Color(0x66000000)), contentAlignment = Alignment.Center) {
+                                            PlayPauseVector(playing = playing && !paused, modifier = Modifier.size(22.dp))
+                                        }
+                                    }
                                 }
                                 Spacer(Modifier.width(10.dp))
                                 Column(Modifier.weight(1f)) {
@@ -998,10 +1008,10 @@ fun PlaylistDialog(
                                     Modifier.size(28.dp).background(Color(0xFF505054), CircleShape).clickable { moreItem = item },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text("•••", color = Color(0xFF19191B), fontSize = 12.sp)
+                                    MoreVector(Modifier.size(16.dp))
                                 }
                         }
-                            Spacer(Modifier.height(6.dp))
+                            Spacer(Modifier.height(2.dp))
                 }
             }
             }
@@ -1039,10 +1049,42 @@ fun PlaylistDialog(
                     TextButton(onClick = { moreItem = null; onRemove(item) }) {
                         Text("从播放列表移除", color = Color(0xFFE74C3C))
                     }
+                    TextButton(onClick = { moreItem = null; infoItem = item }) { Text("歌曲信息") }
                 }
             },
             confirmButton = { TextButton(onClick = { moreItem = null }) { Text("关闭") } }
         )
+    }
+
+    infoItem?.let { item -> SongDetailDialog(item) { infoItem = null } }
+}
+
+@Composable
+private fun PlayPauseVector(playing: Boolean, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        if (playing) {
+            val width = size.width * 0.22f
+            drawRoundRect(Color.White, androidx.compose.ui.geometry.Offset(size.width * 0.22f, size.height * 0.16f), androidx.compose.ui.geometry.Size(width, size.height * 0.68f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(width * 0.22f))
+            drawRoundRect(Color.White, androidx.compose.ui.geometry.Offset(size.width * 0.56f, size.height * 0.16f), androidx.compose.ui.geometry.Size(width, size.height * 0.68f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(width * 0.22f))
+        } else {
+            val triangle = Path().apply {
+                moveTo(size.width * 0.25f, size.height * 0.14f)
+                lineTo(size.width * 0.82f, size.height * 0.5f)
+                lineTo(size.width * 0.25f, size.height * 0.86f)
+                close()
+            }
+            drawPath(triangle, Color.White)
+        }
+    }
+}
+
+@Composable
+private fun MoreVector(modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val radius = size.minDimension * 0.105f
+        listOf(0.22f, 0.5f, 0.78f).forEach { x ->
+            drawCircle(Color(0xFF202024), radius, androidx.compose.ui.geometry.Offset(size.width * x, size.height * 0.5f))
+        }
     }
 }
 
