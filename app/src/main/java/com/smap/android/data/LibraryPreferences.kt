@@ -52,6 +52,18 @@ class LibraryPreferences(context: Context) {
 
     fun saveCave(enabled: Boolean) { prefs.edit().putBoolean("cave", enabled).apply() }
 
+    fun theme(): String = prefs.getString("theme", "dark") ?: "dark"
+
+    fun saveTheme(theme: String) {
+        prefs.edit().putString("theme", theme).apply()
+    }
+
+    fun resetPitches() {
+        prefs.edit().apply {
+            prefs.all.keys.filter { it.startsWith("pitch_") }.forEach(::remove)
+        }.apply()
+    }
+
     fun lastSong(): String? = prefs.getString("last_song", null)
 
     fun lastPosition(): Long = prefs.getLong("last_position", 0L).coerceAtLeast(0L)

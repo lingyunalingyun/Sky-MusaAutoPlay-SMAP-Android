@@ -109,15 +109,44 @@ import kotlin.random.Random
 import java.text.Collator
 
 // 与桌面版 SMAP 深色主题共用的视觉语言
-private val WindowColor = Color(0xFF121214)
-private val PanelColor = Color(0xFF1C1C1C)
-private val CardColor = Color(0xFF18181A)
-private val AccentColor = Color(0xFF5AA0FF)
-private val BorderColor = Color(0xFF38383C)
-private val SecondaryText = Color(0xFF9A9AA1)
+private var WindowColor by mutableStateOf(Color(0xFF121214))
+private var PanelColor by mutableStateOf(Color(0xFF1C1C1C))
+private var CardColor by mutableStateOf(Color(0xFF18181A))
+private var AccentColor by mutableStateOf(Color(0xFF5AA0FF))
+private var BorderColor by mutableStateOf(Color(0xFF38383C))
+private var SecondaryText by mutableStateOf(Color(0xFF9A9AA1))
 private val LocalBlue = Color(0xFF2F6FD0)
 private val CloudGreen = Color(0xFF12795A)
 private val FavoriteGold = Color(0xFFE0B700)
+
+private fun applyAppTheme(theme: String) {
+    when (theme) {
+        "light" -> {
+            WindowColor = Color(0xFF353539)
+            PanelColor = Color(0xFF424247)
+            CardColor = Color(0xFF4B4B50)
+            AccentColor = Color(0xFF73AEFF)
+            BorderColor = Color(0xFF6A6A70)
+            SecondaryText = Color(0xFFC8C8CE)
+        }
+        "sunset" -> {
+            WindowColor = Color(0xFF2E2530)
+            PanelColor = Color(0xFF3A2D3C)
+            CardColor = Color(0xFF443246)
+            AccentColor = Color(0xFFF45FB7)
+            BorderColor = Color(0xFF76526F)
+            SecondaryText = Color(0xFFD7BFD2)
+        }
+        else -> {
+            WindowColor = Color(0xFF121214)
+            PanelColor = Color(0xFF1C1C1C)
+            CardColor = Color(0xFF18181A)
+            AccentColor = Color(0xFF5AA0FF)
+            BorderColor = Color(0xFF38383C)
+            SecondaryText = Color(0xFF9A9AA1)
+        }
+    }
+}
 
 private data class PendingMidi(
     val fileName: String,
@@ -211,6 +240,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
     var speed by remember { mutableStateOf(preferences.speed()) }
     var randomSpeed by remember { mutableStateOf(preferences.randomSpeed()) }
     var cave by remember { mutableStateOf(preferences.cave()) }
+    var appTheme by remember { mutableStateOf(preferences.theme()) }
     var playToken by remember { mutableIntStateOf(0) }
     var lastPersistedBucket by remember { mutableStateOf(-1L) }
     val scope = rememberCoroutineScope()
@@ -218,6 +248,8 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
     val playerEngine = remember { PlayerEngine(scope) }
     var instrument by remember { mutableStateOf(preferences.instrument().takeIf { it in audioEngine.instruments } ?: "Piano") }
     var pitch by remember(instrument) { mutableIntStateOf(preferences.pitch(instrument)) }
+
+    LaunchedEffect(appTheme) { applyAppTheme(appTheme) }
 
     LaunchedEffect(instrument, pitch) {
         withContext(Dispatchers.IO) { audioEngine.setInstrument(instrument) }
@@ -393,7 +425,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
 
             Column(
                 modifier = Modifier
-                    .weight(0.42f)
+                    .weight(if (navTab == 5) 1f else 0.42f)
                     .fillMaxHeight()
                     .border(1.dp, BorderColor)
             ) {
@@ -451,24 +483,47 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                         onLogout = { cloudApi.logout(); cloudUser = null },
                         onHome = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(CloudApi.BASE))) }
                     )
+                } else if (navTab == 5) {
+                    SettingsPanel(
+                        theme = appTheme,
+                        onTheme = { selected ->
+                            appTheme = selected
+                            preferences.saveTheme(selected)
+                        },
+                        onResetPitch = {
+                            preferences.resetPitches()
+                            pitch = preferences.pitch(instrument)
+                            Toast.makeText(context, "所有音色的音高已恢复默认", Toast.LENGTH_SHORT).show()
+                        },
+                        onCheckUpdate = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lingyunalingyun/Sky-MusaAutoPlay-SMAP-Android/releases/latest")))
+                        },
+                        onRepository = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lingyunalingyun/Sky-MusaAutoPlay-SMAP-Android")))
+                        },
+                        onLicense = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.gnu.org/licenses/gpl-3.0.html")))
+                        }
+                    )
                 } else {
                     val message = when (navTab) {
-                        5 -> "SMAP Android 0.1.0\n本地曲库与练习功能已启用"
                         else -> ""
                     }
                     EmptyMessage(message)
                 }
             }
 
-            RightPanel(
-                keyFlashes = keyFlashes,
-                pitch = pitch,
-                onKeyPress = { key ->
-                    audioEngine.play(key)
-                    keyFlashes[key]++
-                },
-                modifier = Modifier.weight(0.58f)
-            )
+            if (navTab != 5) {
+                RightPanel(
+                    keyFlashes = keyFlashes,
+                    pitch = pitch,
+                    onKeyPress = { key ->
+                        audioEngine.play(key)
+                        keyFlashes[key]++
+                    },
+                    modifier = Modifier.weight(0.58f)
+                )
+            }
         }
         BottomBar(
             item = nowPlaying ?: selectedItem,
@@ -927,6 +982,84 @@ fun NavButton(label: String, active: Boolean, activeColor: Color, modifier: Modi
         if (active || label == "本地曲库" || label == "云端曲库" || label == "我的收藏") {
             Box(Modifier.fillMaxHeight().width(4.dp).background(activeColor).align(Alignment.CenterEnd))
         }
+    }
+}
+
+@Composable
+private fun SettingsPanel(
+    theme: String,
+    onTheme: (String) -> Unit,
+    onResetPitch: () -> Unit,
+    onCheckUpdate: () -> Unit,
+    onRepository: () -> Unit,
+    onLicense: () -> Unit
+) {
+    var showThemes by remember { mutableStateOf(false) }
+    val themeName = when (theme) {
+        "light" -> "浅色模式"
+        "sunset" -> "落日糖纸"
+        else -> "深色模式"
+    }
+
+    Row(Modifier.fillMaxSize().padding(24.dp)) {
+        Column(Modifier.weight(1f).fillMaxHeight()) {
+            Text("设置", color = Color.White, fontSize = 25.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            Spacer(Modifier.height(18.dp))
+            SettingsRow("主题", themeName, onClick = { showThemes = true })
+            Spacer(Modifier.height(8.dp))
+            SettingsRow("音高", "恢复所有音色的默认音高", onClick = onResetPitch)
+            Spacer(Modifier.height(8.dp))
+            SettingsRow("更新", "检查新版本", onClick = onCheckUpdate)
+        }
+
+        Spacer(Modifier.width(28.dp))
+
+        Column(Modifier.weight(1f).fillMaxHeight()) {
+            Text("软件信息", color = Color.White, fontSize = 25.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            Spacer(Modifier.height(18.dp))
+            Text("光遇-Musa 自动弹琴", color = Color.White, fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+            Spacer(Modifier.height(3.dp))
+            Text("Sky-MusaAutoPlay (SMAP)", color = SecondaryText, fontSize = 12.sp)
+            Spacer(Modifier.height(16.dp))
+            Text("Android 版本：v0.1.0", color = Color.White, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+            Text("软件作者：LingYunALingYun", color = Color.White, fontSize = 12.sp)
+            Spacer(Modifier.height(16.dp))
+            SettingsRow("开源仓库", "在浏览器中打开", onClick = onRepository)
+            Spacer(Modifier.height(8.dp))
+            SettingsRow("开源协议", "GNU GPL v3.0", onClick = onLicense)
+        }
+    }
+
+    if (showThemes) {
+        ChoiceDialog(
+            title = "选择主题",
+            options = listOf("dark|深色模式", "light|浅色模式", "sunset|落日糖纸"),
+            selected = "$theme|$themeName",
+            onDismiss = { showThemes = false }
+        ) { value ->
+            onTheme(value.substringBefore('|'))
+            showThemes = false
+        }
+    }
+}
+
+@Composable
+private fun SettingsRow(label: String, value: String, onClick: (() -> Unit)? = null) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .background(CardColor, RoundedCornerShape(8.dp))
+            .border(1.dp, BorderColor, RoundedCornerShape(8.dp))
+            .let { modifier -> if (onClick != null) modifier.clickable(onClick = onClick) else modifier }
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = Color.White, fontSize = 12.sp, modifier = Modifier.width(86.dp))
+        Text(value, color = if (onClick == null) SecondaryText else AccentColor, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.weight(1f))
+        if (onClick != null) Text("›", color = SecondaryText, fontSize = 20.sp)
     }
 }
 
