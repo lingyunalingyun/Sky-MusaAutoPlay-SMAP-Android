@@ -612,7 +612,20 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
             paused = isPaused,
             favorites = favorites,
             onDismiss = { showPlaylist = false },
-            onPlay = { startPlayback(it, true) },
+            onPlay = { item ->
+                if (nowPlaying?.fileName == item.fileName && isPlaying) {
+                    if (isPaused) {
+                        playerEngine.resume()
+                        isPaused = false
+                    } else {
+                        playerEngine.pause()
+                        isPaused = true
+                        preferences.savePlayback(item.fileName, positionMs)
+                    }
+                } else {
+                    startPlayback(item, true)
+                }
+            },
             onFavorite = { favorites = preferences.toggleFavorite(it.fileName) },
             onRemove = { item ->
                 playlistFiles = playlistFiles - item.fileName
@@ -1174,10 +1187,11 @@ fun BottomBar(
                         else Text("♪", color = AccentColor, fontSize = 19.sp)
                     }
                     Spacer(Modifier.width(9.dp))
-                    Column(Modifier.width(155.dp)) {
+                    Column(Modifier.width(155.dp), verticalArrangement = Arrangement.Center) {
                         Text(item?.song?.name ?: "未有正在播放的歌曲", color = Color.White, fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (item != null) {
-                            Text("${item.song.author ?: "未知"} · ${item.song.transcribedBy ?: "未知"}", color = SecondaryText, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(item.song.author ?: "未知", color = SecondaryText, fontSize = 8.sp, lineHeight = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(item.song.transcribedBy ?: "未知", color = SecondaryText, fontSize = 8.sp, lineHeight = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                     if (item != null) FavoriteStarIcon(favorite, Modifier.size(30.dp).clickable(onClick = onFavorite).padding(4.dp))
@@ -1375,7 +1389,7 @@ fun PlaylistDialog(
                         Row(
                                 Modifier
                                     .fillMaxWidth()
-                                    .height(62.dp)
+                                    .height(66.dp)
                                     .background(if (isCurrent) Color(0xFF303033) else Color(0xFF292929), RoundedCornerShape(5.dp))
                                     .clickable { onPlay(item) }
                                     .padding(6.dp),
@@ -1397,7 +1411,7 @@ fun PlaylistDialog(
                                     }
                                 }
                                 Spacer(Modifier.width(10.dp))
-                                Column(Modifier.weight(1f)) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             item.song.name,
@@ -1421,8 +1435,8 @@ fun PlaylistDialog(
                                             }
                                         }
                                     }
-                                    Text(item.song.author ?: "未知", color = SecondaryText, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(item.song.transcribedBy ?: "未知", color = SecondaryText, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(item.song.author ?: "未知", color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(item.song.transcribedBy ?: "未知", color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                                 FavoriteStarIcon(
                                     filled = item.fileName in favorites,
