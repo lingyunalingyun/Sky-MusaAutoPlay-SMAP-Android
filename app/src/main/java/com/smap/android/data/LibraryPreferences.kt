@@ -58,6 +58,12 @@ class LibraryPreferences(context: Context) {
         prefs.edit().putString("theme", theme).apply()
     }
 
+    fun language(): String = prefs.getString("language", "zh-CN") ?: "zh-CN"
+
+    fun saveLanguage(language: String) {
+        prefs.edit().putString("language", language).apply()
+    }
+
     fun resetPitches() {
         prefs.edit().apply {
             prefs.all.keys.filter { it.startsWith("pitch_") }.forEach(::remove)

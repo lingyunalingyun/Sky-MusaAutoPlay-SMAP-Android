@@ -98,6 +98,9 @@ import com.smap.android.data.SongRepository
 import com.smap.android.engine.AudioEngine
 import com.smap.android.engine.KeyPoint
 import com.smap.android.engine.PlayerEngine
+import com.smap.android.i18n.AppLocale
+import com.smap.android.i18n.tr
+import com.smap.android.i18n.trf
 import com.smap.android.midi.MidiImporter
 import com.smap.android.service.FloatService
 import com.smap.android.ui.SMAPPlayButton
@@ -241,6 +244,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
     var randomSpeed by remember { mutableStateOf(preferences.randomSpeed()) }
     var cave by remember { mutableStateOf(preferences.cave()) }
     var appTheme by remember { mutableStateOf(preferences.theme()) }
+    var language by remember { mutableStateOf(preferences.language()) }
     var playToken by remember { mutableIntStateOf(0) }
     var lastPersistedBucket by remember { mutableStateOf(-1L) }
     val scope = rememberCoroutineScope()
@@ -249,6 +253,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
     var instrument by remember { mutableStateOf(preferences.instrument().takeIf { it in audioEngine.instruments } ?: "Piano") }
     var pitch by remember(instrument) { mutableIntStateOf(preferences.pitch(instrument)) }
 
+    LaunchedEffect(language) { AppLocale.set(language) }
     LaunchedEffect(appTheme) { applyAppTheme(appTheme) }
 
     LaunchedEffect(instrument, pitch) {
@@ -294,9 +299,9 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
             pendingMidis = pendingMidis + midiFiles
             val message = when {
                 results.isEmpty() && midiFiles.isNotEmpty() -> null
-                failure == 0 -> "已导入 $success 首曲谱"
-                success == 0 -> results.firstNotNullOfOrNull { it.exceptionOrNull()?.message } ?: "导入失败"
-                else -> "已导入 $success 首，失败 $failure 首"
+                failure == 0 -> trf("已导入 %s 首曲谱", success)
+                success == 0 -> results.firstNotNullOfOrNull { it.exceptionOrNull()?.message } ?: tr("导入失败")
+                else -> trf("已导入 %s 首，失败 %s 首", success, failure)
             }
             message?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
         }
@@ -433,8 +438,8 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                     LibraryFilters(
                         query = query,
                         onQueryChange = { query = it },
-                        firstLabel = "全部",
-                        secondLabel = when (sortMode) { 1 -> "名称 Z-A"; 2 -> "收藏优先"; else -> "名称 A-Z" },
+                        firstLabel = tr("全部"),
+                        secondLabel = tr(when (sortMode) { 1 -> "名称 Z-A"; 2 -> "收藏优先"; else -> "名称 A-Z" }),
                         onFirst = { query = "" },
                         onSecond = { sortMode = (sortMode + 1) % 3 }
                     )
@@ -451,9 +456,9 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                                     if (item.fileName !in playlistFiles) {
                                         playlistFiles = playlistFiles + item.fileName
                                         preferences.savePlaylist(playlistFiles)
-                                        Toast.makeText(context, "已加入播放列表「${item.song.name}」", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, trf("已加入播放列表「%s」", item.song.name), Toast.LENGTH_SHORT).show()
                                     } else {
-                                        Toast.makeText(context, "「${item.song.name}」已在播放列表", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, trf("「%s」已在播放列表", item.song.name), Toast.LENGTH_SHORT).show()
                                     }
                                 },
                                 onClick = { addToPlaylistAndPlay(item) },
@@ -462,7 +467,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                             Spacer(Modifier.height(2.dp))
                         }
                         if (visibleItems.isEmpty()) {
-                            item { EmptyMessage(if (navTab == 2) "还没有收藏曲谱" else "没有匹配的曲谱") }
+                            item { EmptyMessage(tr(if (navTab == 2) "还没有收藏曲谱" else "没有匹配的曲谱")) }
                         }
                     }
                 } else if (navTab == 1) {
@@ -473,7 +478,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                                 cloudApi.download(sheet).getOrThrow().let { repository.importDownloaded(sheet.title, it).getOrThrow() }
                             }
                             items = withContext(Dispatchers.IO) { repository.loadSongs() }
-                            Toast.makeText(context, "已下载到本地曲库「${sheet.title}」", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, trf("已下载到本地曲库「%s」", sheet.title), Toast.LENGTH_SHORT).show()
                         }
                     )
                 } else if (navTab == 4) {
@@ -485,6 +490,12 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                     )
                 } else if (navTab == 5) {
                     SettingsPanel(
+                        language = language,
+                        onLanguage = { selected ->
+                            language = selected
+                            AppLocale.set(selected)
+                            preferences.saveLanguage(selected)
+                        },
                         theme = appTheme,
                         onTheme = { selected ->
                             appTheme = selected
@@ -493,7 +504,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                         onResetPitch = {
                             preferences.resetPitches()
                             pitch = preferences.pitch(instrument)
-                            Toast.makeText(context, "所有音色的音高已恢复默认", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, tr("所有音色的音高已恢复默认"), Toast.LENGTH_SHORT).show()
                         },
                         onCheckUpdate = {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lingyunalingyun/Sky-MusaAutoPlay-SMAP-Android/releases/latest")))
@@ -531,7 +542,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
             paused = isPaused,
             positionMs = positionMs,
             playMode = playMode,
-            speedLabel = if (randomSpeed) "随机速度" else "${speed}×",
+            speedLabel = if (randomSpeed) tr("随机速度") else "${speed}×",
             instrumentLabel = instrument,
             pitchLabel = pitch,
             cave = cave,
@@ -549,7 +560,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                     val target = nowPlaying?.takeIf { current -> playlist.any { it.fileName == current.fileName } } ?: playlist.first()
                     startPlayback(target, true, playlist, if (target.fileName == nowPlaying?.fileName) positionMs else 0L)
                 }
-                else Toast.makeText(context, "播放列表为空，请长按歌曲添加", Toast.LENGTH_SHORT).show()
+                else Toast.makeText(context, tr("播放列表为空，请长按歌曲添加"), Toast.LENGTH_SHORT).show()
             },
             onPrevious = {
                 if (playlist.isNotEmpty()) {
@@ -603,7 +614,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                     val result = withContext(Dispatchers.IO) { cloudApi.login(username, password) }
                     loginBusy = false
                     result.onSuccess { cloudUser = it; showLogin = false }
-                        .onFailure { loginError = it.message ?: "登录失败" }
+                        .onFailure { loginError = it.message ?: tr("登录失败") }
                 }
             }
         )
@@ -632,8 +643,8 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
         AlertDialog(
             onDismissRequest = { deleteItem = null },
             containerColor = PanelColor,
-            title = { Text("从曲库中移除", color = Color.White) },
-            text = { Text("确定从曲库中移除「${item.song.name}」吗？", color = Color.White) },
+            title = { Text(tr("从曲库中移除"), color = Color.White) },
+            text = { Text("${tr("确定从曲库中移除")}「${item.song.name}」?", color = Color.White) },
             confirmButton = {
                 TextButton(onClick = {
                     deleteItem = null
@@ -648,14 +659,14 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                             favorites = preferences.removeSong(item.fileName)
                             playlistFiles = playlistFiles - item.fileName
                             items = withContext(Dispatchers.IO) { repository.loadSongs() }
-                            Toast.makeText(context, "已从曲库移除「${item.song.name}」", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, trf("已从曲库移除「%s」", item.song.name), Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(context, "删除失败：${result.exceptionOrNull()?.message}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "${tr("删除失败")}：${result.exceptionOrNull()?.message}", Toast.LENGTH_SHORT).show()
                         }
                     }
-                }) { Text("移除", color = Color(0xFFE74C3C)) }
+                }) { Text(tr("移除"), color = Color(0xFFE74C3C)) }
             },
-            dismissButton = { TextButton(onClick = { deleteItem = null }) { Text("取消") } }
+            dismissButton = { TextButton(onClick = { deleteItem = null }) { Text(tr("取消")) } }
         )
     }
 
@@ -716,7 +727,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
 
     if (showInstrument) {
         val options = audioEngine.instruments.map { "$it|${localizedInstrument(it)}" }
-        ChoiceDialog("选择音色", options, "$instrument|${localizedInstrument(instrument)}", { showInstrument = false }) { selected ->
+        ChoiceDialog(tr("选择音色"), options, "$instrument|${localizedInstrument(instrument)}", { showInstrument = false }) { selected ->
             val key = selected.substringBefore('|')
             instrument = key
             pitch = preferences.pitch(key)
@@ -727,7 +738,7 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
 
     if (showPitch) {
         val pitches = (-24..24).map { value -> "$value|${if (value > 0) "+" else ""}$value ${noteName(value)}" }
-        ChoiceDialog("音高", pitches, "$pitch|${if (pitch > 0) "+" else ""}$pitch ${noteName(pitch)}", { showPitch = false }) { selected ->
+        ChoiceDialog(tr("音高"), pitches, "$pitch|${if (pitch > 0) "+" else ""}$pitch ${noteName(pitch)}", { showPitch = false }) { selected ->
             pitch = selected.substringBefore('|').toInt()
             preferences.savePitch(instrument, pitch)
             showPitch = false
@@ -746,9 +757,9 @@ fun MainScreen(onGamePerform: () -> Unit = {}) {
                     pendingMidis = pendingMidis.drop(1)
                     if (result.isSuccess) {
                         items = withContext(Dispatchers.IO) { repository.loadSongs() }
-                        Toast.makeText(context, "已导入 1 首曲谱", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, trf("已导入 %s 首曲谱", 1), Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(context, result.exceptionOrNull()?.message ?: "导入失败", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, result.exceptionOrNull()?.message ?: tr("导入失败"), Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -770,7 +781,7 @@ private fun CloudLibrary(api: CloudApi, onDownloaded: suspend (CloudSheet) -> Un
     var sheets by remember { mutableStateOf<List<CloudSheet>>(emptyList()) }
     val scope = rememberCoroutineScope()
     val sortKeys = listOf("newest", "newest", "hot", "downloads")
-    val sortLabels = listOf("A-Z", "上传时间", "点赞", "下载量")
+    val sortLabels = listOf("A-Z", tr("上传时间"), tr("点赞"), tr("下载量"))
 
     LaunchedEffect(query) {
         delay(350)
@@ -795,7 +806,7 @@ private fun CloudLibrary(api: CloudApi, onDownloaded: suspend (CloudSheet) -> Un
         result.onSuccess { response ->
             total = response.total
             sheets = if (sortMode == 0) response.items.sortedWith(compareBy(Collator.getInstance()) { it.title }) else response.items
-        }.onFailure { error = it.message ?: "加载失败"; sheets = emptyList() }
+        }.onFailure { error = it.message ?: tr("加载失败"); sheets = emptyList() }
         loading = false
     }
 
@@ -803,15 +814,15 @@ private fun CloudLibrary(api: CloudApi, onDownloaded: suspend (CloudSheet) -> Un
         LibraryFilters(
             query = query,
             onQueryChange = { query = it },
-            firstLabel = if (difficulty == 0) "全部难度" else "★".repeat(difficulty),
+            firstLabel = if (difficulty == 0) tr("全部难度") else "★".repeat(difficulty),
             secondLabel = sortLabels[sortMode],
             onFirst = { difficulty = (difficulty + 1) % 6 },
             onSecond = { sortMode = (sortMode + 1) % sortLabels.size }
         )
         when {
-            loading -> EmptyMessage("正在加载云端曲库…")
+            loading -> EmptyMessage(tr("正在加载云端曲库…"))
             error != null -> EmptyMessage(error!!)
-            sheets.isEmpty() -> EmptyMessage("没有匹配的云端曲谱")
+            sheets.isEmpty() -> EmptyMessage(tr("没有匹配的云端曲谱"))
             else -> LazyColumn(Modifier.weight(1f).padding(horizontal = 6.dp, vertical = 5.dp)) {
                 items(sheets, key = { it.id }) { sheet ->
                     Surface(Modifier.fillMaxWidth().height(72.dp), color = Color.Transparent) {
@@ -820,9 +831,9 @@ private fun CloudLibrary(api: CloudApi, onDownloaded: suspend (CloudSheet) -> Un
                             Spacer(Modifier.width(9.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(sheet.title, color = Color.White, fontSize = 13.sp, lineHeight = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(sheet.artist.ifBlank { "未知作者" }, color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(sheet.artist.ifBlank { tr("未知作者") }, color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(sheet.transcribedBy.ifBlank { "未知做谱者" }, color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                    Text(sheet.transcribedBy.ifBlank { tr("未知做谱者") }, color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                                     val stars = "★".repeat(sheet.difficulty.coerceIn(0, 5))
                                     if (stars.isNotEmpty()) {
                                         Spacer(Modifier.width(5.dp))
@@ -839,7 +850,7 @@ private fun CloudLibrary(api: CloudApi, onDownloaded: suspend (CloudSheet) -> Un
                                 downloadingId = sheet.id
                                 scope.launch {
                                     runCatching { onDownloaded(sheet) }
-                                        .onFailure { error = it.message ?: "下载失败" }
+                                        .onFailure { error = it.message ?: tr("下载失败") }
                                     downloadingId = null
                                 }
                             })
@@ -849,7 +860,7 @@ private fun CloudLibrary(api: CloudApi, onDownloaded: suspend (CloudSheet) -> Un
                 }
             }
         }
-        Text("共 $total 首", color = SecondaryText, fontSize = 9.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 3.dp))
+        Text("${tr("共")} $total ${tr("首")}", color = SecondaryText, fontSize = 9.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 3.dp))
     }
 }
 
@@ -890,14 +901,14 @@ private fun ProfilePanel(user: CloudUser?, onLogin: () -> Unit, onLogout: () -> 
                 Text(user?.username?.firstOrNull()?.uppercase() ?: "?", color = Color.White, fontSize = 30.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
             }
             Spacer(Modifier.height(10.dp))
-            Text(user?.username ?: "尚未登录", color = Color.White, fontSize = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-            Text(if (user == null) "登录缪斯树屋账号" else "已登录 · UID ${user.id}", color = SecondaryText, fontSize = 11.sp)
+            Text(user?.username ?: tr("尚未登录"), color = Color.White, fontSize = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            Text(if (user == null) tr("登录缪斯树屋账号") else "UID ${user.id}", color = SecondaryText, fontSize = 11.sp)
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (user == null) FilterChip("登录", Modifier.width(120.dp), onLogin)
+                if (user == null) FilterChip(tr("登录"), Modifier.width(120.dp), onLogin)
                 else {
-                    FilterChip("个人主页", Modifier.width(120.dp), onHome)
-                    FilterChip("退出账号", Modifier.width(120.dp), onLogout)
+                    FilterChip(tr("个人主页"), Modifier.width(120.dp), onHome)
+                    FilterChip(tr("退出账号"), Modifier.width(120.dp), onLogout)
                 }
             }
         }
@@ -916,16 +927,16 @@ private fun CloudLoginDialog(
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.width(380.dp), shape = RoundedCornerShape(12.dp), color = PanelColor, border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)) {
             Column(Modifier.padding(18.dp)) {
-                Text("登录 — 缪斯树屋", color = Color.White, fontSize = 20.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                Text(tr("登录 — 缪斯树屋"), color = Color.White, fontSize = 20.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                 Spacer(Modifier.height(14.dp))
-                CloudInput(username, { username = it }, "用户名或邮箱")
+                CloudInput(username, { username = it }, tr("用户名或邮箱"))
                 Spacer(Modifier.height(8.dp))
-                CloudInput(password, { password = it }, "密码", true)
+                CloudInput(password, { password = it }, tr("密码"), true)
                 error?.let { Text(it, color = Color(0xFFFF6B6B), fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp)) }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(enabled = !busy, onClick = onDismiss) { Text("取消") }
+                    TextButton(enabled = !busy, onClick = onDismiss) { Text(tr("取消")) }
                     TextButton(enabled = !busy && username.isNotBlank() && password.isNotBlank(), onClick = { onSubmit(username.trim(), password) }) {
-                        Text(if (busy) "登录中…" else "登录")
+                        Text(tr(if (busy) "登录中…" else "登录"))
                     }
                 }
             }
@@ -959,17 +970,17 @@ fun Sidebar(selected: Int, onSelect: (Int) -> Unit) {
             .background(PanelColor)
             .border(1.dp, BorderColor)
     ) {
-        NavButton("本地曲库", selected == 0, LocalBlue, Modifier.weight(1f)) { onSelect(0) }
-        NavButton("云端曲库", selected == 1, CloudGreen, Modifier.weight(1f)) { onSelect(1) }
-        NavButton("我的收藏", selected == 2, FavoriteGold, Modifier.weight(1f)) { onSelect(2) }
-        NavButton("导入歌曲", selected == 3, Color(0xFF7B7B80), Modifier.weight(1f)) { onSelect(3) }
-        NavButton("个人信息", selected == 4, Color(0xFF7B7B80), Modifier.weight(1f)) { onSelect(4) }
-        NavButton("设置", selected == 5, Color(0xFF7B7B80), Modifier.weight(1f)) { onSelect(5) }
+        NavButton(tr("本地曲库"), selected == 0, LocalBlue, Modifier.weight(1f), showIndicator = true) { onSelect(0) }
+        NavButton(tr("云端曲库"), selected == 1, CloudGreen, Modifier.weight(1f), showIndicator = true) { onSelect(1) }
+        NavButton(tr("我的收藏"), selected == 2, FavoriteGold, Modifier.weight(1f), showIndicator = true) { onSelect(2) }
+        NavButton(tr("导入歌曲"), selected == 3, Color(0xFF7B7B80), Modifier.weight(1f)) { onSelect(3) }
+        NavButton(tr("个人信息"), selected == 4, Color(0xFF7B7B80), Modifier.weight(1f)) { onSelect(4) }
+        NavButton(tr("设置"), selected == 5, Color(0xFF7B7B80), Modifier.weight(1f)) { onSelect(5) }
     }
 }
 
 @Composable
-fun NavButton(label: String, active: Boolean, activeColor: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun NavButton(label: String, active: Boolean, activeColor: Color, modifier: Modifier = Modifier, showIndicator: Boolean = false, onClick: () -> Unit) {
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -979,7 +990,7 @@ fun NavButton(label: String, active: Boolean, activeColor: Color, modifier: Modi
         contentAlignment = Alignment.Center
     ) {
         Text(label, fontSize = 11.sp, color = Color.White, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-        if (active || label == "本地曲库" || label == "云端曲库" || label == "我的收藏") {
+        if (active || showIndicator) {
             Box(Modifier.fillMaxHeight().width(4.dp).background(activeColor).align(Alignment.CenterEnd))
         }
     }
@@ -987,6 +998,8 @@ fun NavButton(label: String, active: Boolean, activeColor: Color, modifier: Modi
 
 @Composable
 private fun SettingsPanel(
+    language: String,
+    onLanguage: (String) -> Unit,
     theme: String,
     onTheme: (String) -> Unit,
     onResetPitch: () -> Unit,
@@ -995,51 +1008,72 @@ private fun SettingsPanel(
     onLicense: () -> Unit
 ) {
     var showThemes by remember { mutableStateOf(false) }
+    var showLanguages by remember { mutableStateOf(false) }
+    val languageName = when (language) {
+        "zh-TW" -> "繁體中文"
+        "en" -> "English"
+        "ja" -> "日本語"
+        else -> "简体中文"
+    }
     val themeName = when (theme) {
-        "light" -> "浅色模式"
-        "sunset" -> "落日糖纸"
-        else -> "深色模式"
+        "light" -> tr("浅色模式")
+        "sunset" -> tr("落日糖纸")
+        else -> tr("深色模式")
     }
 
     Row(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp)) {
         Column(Modifier.weight(1f).fillMaxHeight()) {
-            Text("设置", color = Color.White, fontSize = 25.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            Text(tr("设置"), color = Color.White, fontSize = 25.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
             Spacer(Modifier.height(10.dp))
-            SettingsRow("主题", themeName, onClick = { showThemes = true })
+            SettingsRow(tr("语言"), languageName, onClick = { showLanguages = true })
             Spacer(Modifier.height(8.dp))
-            SettingsRow("音高", "恢复所有音色的默认音高", onClick = onResetPitch)
+            SettingsRow(tr("主题"), themeName, onClick = { showThemes = true })
             Spacer(Modifier.height(8.dp))
-            SettingsRow("更新", "检查新版本", onClick = onCheckUpdate)
+            SettingsRow(tr("音高"), tr("恢复所有音色的默认音高"), onClick = onResetPitch)
+            Spacer(Modifier.height(8.dp))
+            SettingsRow(tr("更新"), tr("检查新版本"), onClick = onCheckUpdate)
         }
 
         Spacer(Modifier.width(28.dp))
 
         Column(Modifier.weight(1f).fillMaxHeight()) {
-            Text("软件信息", color = Color.White, fontSize = 25.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            Text(tr("软件信息"), color = Color.White, fontSize = 25.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
             Spacer(Modifier.height(10.dp))
-            Text("光遇-Musa 自动弹琴", color = Color.White, fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+            Text(tr("光遇-Musa 自动弹琴"), color = Color.White, fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
             Spacer(Modifier.height(2.dp))
             Text("Sky-MusaAutoPlay (SMAP)", color = SecondaryText, fontSize = 12.sp)
             Spacer(Modifier.height(9.dp))
-            Text("Android 版本：v0.1.0", color = Color.White, fontSize = 12.sp)
+            Text("${tr("Android 版本")}：v0.1.0", color = Color.White, fontSize = 12.sp)
             Spacer(Modifier.height(4.dp))
-            Text("软件作者：LingYunALingYun", color = Color.White, fontSize = 12.sp)
+            Text("${tr("软件作者")}：LingYunALingYun", color = Color.White, fontSize = 12.sp)
             Spacer(Modifier.height(9.dp))
-            SettingsRow("开源仓库", "在浏览器中打开", onClick = onRepository)
+            SettingsRow(tr("开源仓库"), tr("在浏览器中打开"), onClick = onRepository)
             Spacer(Modifier.height(6.dp))
-            SettingsRow("开源协议", "GNU GPL v3.0", onClick = onLicense)
+            SettingsRow(tr("开源协议"), "GNU GPL v3.0", onClick = onLicense)
         }
     }
 
     if (showThemes) {
         ChoiceDialog(
-            title = "选择主题",
-            options = listOf("dark|深色模式", "light|浅色模式", "sunset|落日糖纸"),
+            title = tr("选择主题"),
+            options = listOf("dark|${tr("深色模式")}", "light|${tr("浅色模式")}", "sunset|${tr("落日糖纸")}"),
             selected = "$theme|$themeName",
             onDismiss = { showThemes = false }
         ) { value ->
             onTheme(value.substringBefore('|'))
             showThemes = false
+        }
+    }
+
+    if (showLanguages) {
+        ChoiceDialog(
+            title = tr("选择语言"),
+            options = listOf("zh-CN|简体中文", "zh-TW|繁體中文", "en|English", "ja|日本語"),
+            selected = "$language|$languageName",
+            onDismiss = { showLanguages = false }
+        ) { value ->
+            onLanguage(value.substringBefore('|'))
+            showLanguages = false
         }
     }
 }
@@ -1082,7 +1116,7 @@ fun LibraryFilters(
             modifier = Modifier.fillMaxWidth().height(30.dp).background(CardColor).border(1.dp, BorderColor),
             decorationBox = { input ->
                 Box(Modifier.fillMaxSize().padding(horizontal = 10.dp), contentAlignment = Alignment.CenterStart) {
-                    if (query.isEmpty()) Text("搜索", color = Color(0xFF77777D), fontSize = 11.sp)
+                    if (query.isEmpty()) Text(tr("搜索"), color = Color(0xFF77777D), fontSize = 11.sp)
                     input()
                 }
             }
@@ -1145,8 +1179,8 @@ fun SongCard(
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
                 Text(song.name, color = Color.White, fontSize = 13.sp, lineHeight = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(song.author ?: "未知作者", color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(song.transcribedBy ?: "未知做谱者", color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(song.author ?: tr("未知作者"), color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(song.transcribedBy ?: tr("未知做谱者"), color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.width(6.dp))
             if (selected) {
@@ -1321,10 +1355,10 @@ fun BottomBar(
                     }
                     Spacer(Modifier.width(9.dp))
                     Column(Modifier.width(155.dp), verticalArrangement = Arrangement.Center) {
-                        Text(item?.song?.name ?: "未有正在播放的歌曲", color = Color.White, fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(item?.song?.name ?: tr("未有正在播放的歌曲"), color = Color.White, fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (item != null) {
-                            Text(item.song.author ?: "未知", color = SecondaryText, fontSize = 8.sp, lineHeight = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(item.song.transcribedBy ?: "未知", color = SecondaryText, fontSize = 8.sp, lineHeight = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(item.song.author ?: tr("未知"), color = SecondaryText, fontSize = 8.sp, lineHeight = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(item.song.transcribedBy ?: tr("未知"), color = SecondaryText, fontSize = 8.sp, lineHeight = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                     if (item != null) FavoriteStarIcon(favorite, Modifier.size(30.dp).clickable(onClick = onFavorite).padding(4.dp))
@@ -1345,9 +1379,9 @@ fun BottomBar(
                     Spacer(Modifier.weight(1f))
                     TransportVector("cave", Modifier.size(32.dp).clickable(onClick = onCave).padding(5.dp), cave)
                     Spacer(Modifier.width(4.dp))
-                    PlayerPill("音色:${localizedInstrument(instrumentLabel)}", onInstrument)
+                    PlayerPill("${tr("音色")}:${localizedInstrument(instrumentLabel)}", onInstrument)
                     Spacer(Modifier.width(6.dp))
-                    PlayerPill("音高:${if (pitchLabel > 0) "+" else ""}$pitchLabel ${noteName(pitchLabel)}", onPitch)
+                    PlayerPill("${tr("音高")}:${if (pitchLabel > 0) "+" else ""}$pitchLabel ${noteName(pitchLabel)}", onPitch)
                     Spacer(Modifier.width(6.dp))
                     PlayerPill(speedLabel, onSpeed)
                 }
@@ -1418,15 +1452,15 @@ fun SongOptionsDialog(
         title = { Text(item.song.name, color = Color.White) },
         text = {
             Column {
-                TextButton(onClick = onPlay) { Text("播放") }
+                TextButton(onClick = onPlay) { Text(tr("播放")) }
                 TextButton(onClick = onAddPlaylist, enabled = !inPlaylist) {
-                    Text(if (inPlaylist) "已在播放列表" else "添加到播放列表")
+                    Text(tr(if (inPlaylist) "已在播放列表" else "添加到播放列表"))
                 }
-                TextButton(onClick = onFavorite) { Text(if (favorite) "取消收藏" else "收藏") }
-                TextButton(onClick = onDelete) { Text("从曲库中移除", color = Color(0xFFE74C3C)) }
+                TextButton(onClick = onFavorite) { Text(tr(if (favorite) "取消收藏" else "收藏")) }
+                TextButton(onClick = onDelete) { Text(tr("从曲库中移除"), color = Color(0xFFE74C3C)) }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(tr("关闭")) } }
     )
 }
 
@@ -1499,18 +1533,18 @@ fun PlaylistDialog(
                     Modifier.fillMaxWidth().height(48.dp).padding(start = 12.dp, end = 40.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("播放列表", color = Color.White, fontSize = 19.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Text(tr("播放列表"), color = Color.White, fontSize = 19.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                     Spacer(Modifier.width(8.dp))
-                    Text("${items.size} 首", color = SecondaryText, fontSize = 11.sp)
+                    Text("${items.size} ${tr("首")}", color = SecondaryText, fontSize = 11.sp)
                     Spacer(Modifier.weight(1f))
                     if (items.isNotEmpty()) {
-                        Text("清空", color = SecondaryText, fontSize = 11.sp, modifier = Modifier.clickable { confirmClear = true }.padding(6.dp))
+                        Text(tr("清空"), color = SecondaryText, fontSize = 11.sp, modifier = Modifier.clickable { confirmClear = true }.padding(6.dp))
                     }
                 }
                 Box(Modifier.fillMaxWidth().height(1.dp).background(BorderColor))
             if (items.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("播放列表为空\n长按曲库歌曲即可添加", color = SecondaryText, fontSize = 12.sp)
+                        Text(tr("播放列表为空\n长按曲库歌曲即可添加"), color = SecondaryText, fontSize = 12.sp)
                     }
             } else {
                     LazyColumn(Modifier.fillMaxSize().padding(start = 8.dp, end = 40.dp, top = 6.dp, bottom = 6.dp)) {
@@ -1568,8 +1602,8 @@ fun PlaylistDialog(
                                             }
                                         }
                                     }
-                                    Text(item.song.author ?: "未知", color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(item.song.transcribedBy ?: "未知", color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(item.song.author ?: tr("未知"), color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(item.song.transcribedBy ?: tr("未知"), color = SecondaryText, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                                 FavoriteStarIcon(
                                     filled = item.fileName in favorites,
@@ -1595,14 +1629,14 @@ fun PlaylistDialog(
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             containerColor = PanelColor,
-            title = { Text("清空播放列表", color = Color.White) },
-            text = { Text("确定清空播放列表吗？", color = Color.White) },
+            title = { Text(tr("清空播放列表"), color = Color.White) },
+            text = { Text(tr("确定清空播放列表吗？"), color = Color.White) },
             confirmButton = {
                 TextButton(onClick = { confirmClear = false; onClear() }) {
-                    Text("清空", color = Color(0xFFE74C3C))
+                    Text(tr("清空"), color = Color(0xFFE74C3C))
                 }
             },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } }
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text(tr("取消")) } }
         )
     }
 
@@ -1613,17 +1647,17 @@ fun PlaylistDialog(
             title = { Text(item.song.name, color = Color.White) },
             text = {
                 Column {
-                    TextButton(onClick = { moreItem = null; onPlay(item) }) { Text("播放") }
+                    TextButton(onClick = { moreItem = null; onPlay(item) }) { Text(tr("播放")) }
                     TextButton(onClick = { onFavorite(item) }) {
-                        Text(if (item.fileName in favorites) "取消收藏" else "收藏")
+                        Text(tr(if (item.fileName in favorites) "取消收藏" else "收藏"))
                     }
                     TextButton(onClick = { moreItem = null; onRemove(item) }) {
-                        Text("从播放列表移除", color = Color(0xFFE74C3C))
+                        Text(tr("从播放列表移除"), color = Color(0xFFE74C3C))
                     }
-                    TextButton(onClick = { moreItem = null; infoItem = item }) { Text("歌曲信息") }
+                    TextButton(onClick = { moreItem = null; infoItem = item }) { Text(tr("歌曲信息")) }
                 }
             },
-            confirmButton = { TextButton(onClick = { moreItem = null }) { Text("关闭") } }
+            confirmButton = { TextButton(onClick = { moreItem = null }) { Text(tr("关闭")) } }
         )
     }
 
@@ -1695,12 +1729,12 @@ private fun MidiImportDialog(
     AlertDialog(
         onDismissRequest = onCancel,
         containerColor = PanelColor,
-        title = { Text("导入 MIDI", color = Color.White) },
+        title = { Text(tr("导入 MIDI"), color = Color.White) },
         text = {
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 430.dp)) {
                 item {
                     Text(pending.fileName, color = Color.White, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                    Text("选择音轨", color = SecondaryText, fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp, bottom = 4.dp))
+                    Text(tr("选择音轨"), color = SecondaryText, fontSize = 11.sp, modifier = Modifier.padding(top = 10.dp, bottom = 4.dp))
                 }
                 items(pending.analysis.tracks, key = { it.index }) { track ->
                     Row(
@@ -1712,7 +1746,7 @@ private fun MidiImportDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Checkbox(checked = track.index in selectedTracks, onCheckedChange = null)
-                        Text("${track.name}  (${track.noteCount} 音符)", color = Color.White, fontSize = 12.sp)
+                        Text("${track.name}  (${track.noteCount} ${tr("音符")})", color = Color.White, fontSize = 12.sp)
                     }
                 }
                 item {
@@ -1721,20 +1755,20 @@ private fun MidiImportDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Checkbox(checked = autoAlign, onCheckedChange = null)
-                        Text("自动移调对齐 C 大调", color = Color.White, fontSize = 12.sp)
+                        Text(tr("自动移调对齐 C 大调"), color = Color.White, fontSize = 12.sp)
                     }
                     if (autoAlign) {
                         Text(
-                            if (selectedTracks.isEmpty()) "请至少选择一条音轨" else "已移调 ${"%+d".format(shift)} 半音 · 白键率 ${(whiteRatio * 100).toInt()}%",
+                            if (selectedTracks.isEmpty()) tr("请至少选择一条音轨") else "${"%+d".format(shift)} ${tr("半音")} · ${tr("白键率")} ${(whiteRatio * 100).toInt()}%",
                             color = Color(0xFF2AAA77), fontSize = 11.sp, modifier = Modifier.padding(start = 12.dp, bottom = 6.dp)
                         )
                     } else {
-                        Text("手动八度", color = SecondaryText, fontSize = 11.sp)
+                        Text(tr("手动八度"), color = SecondaryText, fontSize = 11.sp)
                         ImportTextField(octave, { octave = it.filter { c -> c == '-' || c.isDigit() } }, "0")
                     }
-                    Text("曲名", color = SecondaryText, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
-                    ImportTextField(songName, { songName = it }, "MIDI 导入")
-                    Text("检测 BPM：${"%.1f".format(pending.analysis.initialBpm)}", color = SecondaryText, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+                    Text(tr("曲名"), color = SecondaryText, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+                    ImportTextField(songName, { songName = it }, tr("MIDI 导入"))
+                    Text("${tr("检测 BPM")}：${"%.1f".format(pending.analysis.initialBpm)}", color = SecondaryText, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
                 }
             }
         },
@@ -1742,11 +1776,11 @@ private fun MidiImportDialog(
             TextButton(
                 enabled = selectedTracks.isNotEmpty(),
                 onClick = {
-                    onImport(songName.trim().ifBlank { "MIDI 导入" }, selectedTracks, autoAlign, octave.toIntOrNull() ?: 0)
+                    onImport(songName.trim().ifBlank { tr("MIDI 导入") }, selectedTracks, autoAlign, octave.toIntOrNull() ?: 0)
                 }
-            ) { Text("导入") }
+            ) { Text(tr("导入")) }
         },
-        dismissButton = { TextButton(onClick = onCancel) { Text("取消") } }
+        dismissButton = { TextButton(onClick = onCancel) { Text(tr("取消")) } }
     )
 }
 
@@ -1785,11 +1819,11 @@ fun SpeedDialog(
         ) {
             Column(Modifier.padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("播放速度", color = Color.White, fontSize = 18.sp, modifier = Modifier.weight(1f))
-                    TextButton(onClick = onDismiss) { Text("关闭") }
+                    Text(tr("播放速度"), color = Color.White, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) { Text(tr("关闭")) }
                 }
                 val options = listOf<Pair<String, () -> Unit>>(
-                    (if (random) "✓ 随机速度" else "随机速度") to { onSelect(speed, true) }
+                    (if (random) "✓ ${tr("随机速度")}" else tr("随机速度")) to { onSelect(speed, true) }
                 ) + speeds.map { value ->
                     (if (!random && speed == value) "✓ ${value}×" else "${value}×") to { onSelect(value, false) }
                 }
@@ -1831,7 +1865,7 @@ private fun ChoiceDialog(
             Column(Modifier.padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(title, color = Color.White, fontSize = 18.sp, modifier = Modifier.weight(1f))
-                    TextButton(onClick = onDismiss) { Text("关闭") }
+                    TextButton(onClick = onDismiss) { Text(tr("关闭")) }
                 }
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 118.dp),
@@ -1882,14 +1916,7 @@ private fun localizedInstrument(key: String): String {
         "Contrabass" to arrayOf("低音提琴", "低音提琴", "Contrabass", "コントラバス"), "4thAnnivBass" to arrayOf("四周年·贝斯", "四週年·貝斯", "4th Anniv Bass", "4周年ベース"),
         "GoldDundun" to arrayOf("金邓杜鼓", "金鄧杜鼓", "Gold Dundun", "ゴールドドゥンドゥン")
     )
-    val locale = java.util.Locale.getDefault()
-    val index = when {
-        locale.language == "ja" -> 3
-        locale.language == "en" -> 2
-        locale.language == "zh" && (locale.script == "Hant" || locale.country in setOf("TW", "HK", "MO")) -> 1
-        else -> 0
-    }
-    return names[key]?.get(index) ?: key
+    return names[key]?.get(AppLocale.index) ?: key
 }
 
 /** 曲谱详情 */
@@ -1904,19 +1931,19 @@ fun SongDetailDialog(item: LibraryItem, onDismiss: () -> Unit) {
         title = { Text(song.name) },
         text = {
             Column {
-                InfoRow("文件名", item.fileName)
+                InfoRow(tr("文件名"), item.fileName)
                 InfoRow("BPM", song.bpm.toString())
-                InfoRow("音符数", song.songNotes.size.toString())
-                InfoRow("时长", formatDuration(song.durationMs))
-                InfoRow("作者", song.author ?: "—")
-                InfoRow("做谱者", song.transcribedBy ?: "—")
-                InfoRow("音高", song.pitchLevel.toString())
-                InfoRow("键数", song.keyCount.toString())
-                InfoRow("原创", if (song.isComposed) "是" else "否")
+                InfoRow(tr("音符数"), song.songNotes.size.toString())
+                InfoRow(tr("时长"), formatDuration(song.durationMs))
+                InfoRow(tr("作者"), song.author ?: "—")
+                InfoRow(tr("做谱者"), song.transcribedBy ?: "—")
+                InfoRow(tr("音高"), song.pitchLevel.toString())
+                InfoRow(tr("键数"), song.keyCount.toString())
+                InfoRow(tr("原创"), tr(if (song.isComposed) "是" else "否"))
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭", color = AccentColor) }
+            TextButton(onClick = onDismiss) { Text(tr("关闭"), color = AccentColor) }
         }
     )
 }

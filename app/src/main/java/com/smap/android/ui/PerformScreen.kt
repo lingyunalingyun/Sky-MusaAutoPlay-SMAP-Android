@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -41,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import com.smap.android.engine.KeyLayout
 import com.smap.android.engine.KeyLayoutStore
 import com.smap.android.engine.PlayerEngine
+import com.smap.android.i18n.tr
 import com.smap.android.model.SkySong
 import com.smap.android.service.FloatService
 import com.smap.android.service.SMAPAccessibilityService
@@ -70,6 +73,10 @@ fun PerformScreen(song: SkySong, onBack: () -> Unit, onGameModeChange: (Boolean)
     var speed by remember { mutableFloatStateOf(1f) }
     var showCalib by remember { mutableStateOf(false) }
     var gameMode by remember { mutableStateOf(FloatService.isRunning()) }
+    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
+    val disclosurePreferences = remember {
+        context.getSharedPreferences("accessibility_disclosure", android.content.Context.MODE_PRIVATE)
+    }
     val serviceEnabled = SMAPAccessibilityService.isEnabled()
     val engine = remember { PlayerEngine(scope) }
 
@@ -108,13 +115,13 @@ fun PerformScreen(song: SkySong, onBack: () -> Unit, onGameModeChange: (Boolean)
                     shape = RoundedCornerShape(12.dp),
                     color = Color(0x33110E2A)
                 ) {
-                    Text("‹ 返回", color = Color.White, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+                    Text("‹ ${tr("返回")}", color = Color.White, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
                 }
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(song.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                     Text(
-                        "BPM ${song.bpm} · ${song.songNotes.size} 音符",
+                        "BPM ${song.bpm} · ${song.songNotes.size} ${tr("音符")}",
                         color = Color(0xFF9CA3AF), fontSize = 12.sp
                     )
                 }
@@ -126,8 +133,18 @@ fun PerformScreen(song: SkySong, onBack: () -> Unit, onGameModeChange: (Boolean)
                             playing = false
                             activeKey = -1
                         }
-                        gameMode = !gameMode
-                        onGameModeChange(gameMode)
+                        if (gameMode) {
+                            gameMode = false
+                            onGameModeChange(false)
+                        } else if (disclosurePreferences.getBoolean("accepted", false)) {
+                            gameMode = true
+                            onGameModeChange(true)
+                            if (!SMAPAccessibilityService.isEnabled()) {
+                                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                            }
+                        } else {
+                            showAccessibilityDisclosure = true
+                        }
                     },
                     shape = RoundedCornerShape(18.dp),
                     color = if (gameMode) Color(0xFF2F6FD0) else PanelColor,
@@ -137,7 +154,7 @@ fun PerformScreen(song: SkySong, onBack: () -> Unit, onGameModeChange: (Boolean)
                         modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 5.dp, bottom = 5.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("游戏模式", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(tr("游戏模式"), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.width(8.dp))
                         Box(
                             modifier = Modifier
@@ -161,15 +178,15 @@ fun PerformScreen(song: SkySong, onBack: () -> Unit, onGameModeChange: (Boolean)
                         shape = RoundedCornerShape(12.dp),
                         color = Color(0x66F59E0B)
                     ) {
-                        Text("⚠ 需开启无障碍", color = Color.White, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+                        Text("⚠ ${tr("需开启无障碍")}", color = Color.White, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
                     }
                 } else if (gameMode) {
                     Surface(shape = RoundedCornerShape(12.dp), color = Color(0x3340B000)) {
-                        Text("✓ 无障碍已开", color = Color(0xFFA3E635), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+                        Text("✓ ${tr("无障碍已开")}", color = Color(0xFFA3E635), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
                     }
                 } else {
                     Surface(shape = RoundedCornerShape(12.dp), color = PanelColor) {
-                        Text("本地练习", color = Color(0xFF9A9AA1), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+                        Text(tr("本地练习"), color = Color(0xFF9A9AA1), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
                     }
                 }
             }
@@ -221,7 +238,7 @@ fun PerformScreen(song: SkySong, onBack: () -> Unit, onGameModeChange: (Boolean)
                 horizontalArrangement = Arrangement.Center
             ) {
                 if (gameMode && !serviceEnabled) {
-                    Text("请先开启无障碍服务，然后切到光遇再点播放", color = Color(0xFFF59E0B), fontSize = 13.sp)
+                    Text(tr("请先开启无障碍服务，然后切到光遇再点播放"), color = Color(0xFFF59E0B), fontSize = 13.sp)
                 } else {
                     // 播放/停止
                     SMAPPlayButton(
@@ -252,7 +269,7 @@ fun PerformScreen(song: SkySong, onBack: () -> Unit, onGameModeChange: (Boolean)
                         shape = RoundedCornerShape(12.dp),
                         color = if (showCalib) Color(0x407DD3FC) else Color(0x33110E2A)
                     ) {
-                        Text("校准", color = Color.White, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+                        Text(tr("校准"), color = Color.White, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
                     }
                 }
             }
@@ -268,6 +285,32 @@ fun PerformScreen(song: SkySong, onBack: () -> Unit, onGameModeChange: (Boolean)
             }
 
             Spacer(Modifier.height(4.dp))
+        }
+
+        if (showAccessibilityDisclosure) {
+            AlertDialog(
+                onDismissRequest = { showAccessibilityDisclosure = false },
+                title = { Text(tr("游戏模式需要无障碍权限")) },
+                text = { Text(tr("无障碍权限用途说明")) },
+                dismissButton = {
+                    TextButton(onClick = { showAccessibilityDisclosure = false }) {
+                        Text(tr("拒绝"))
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        disclosurePreferences.edit().putBoolean("accepted", true).apply()
+                        showAccessibilityDisclosure = false
+                        gameMode = true
+                        onGameModeChange(true)
+                        if (!SMAPAccessibilityService.isEnabled()) {
+                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        }
+                    }) {
+                        Text(tr("同意并前往设置"))
+                    }
+                }
+            )
         }
     }
 }
@@ -287,7 +330,7 @@ fun CalibrationPanel(
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("面板位置", color = Color.White, fontSize = 13.sp)
+                Text(tr("面板位置"), color = Color.White, fontSize = 13.sp)
                 Spacer(Modifier.weight(1f))
                 CalibBtn("←") { onChange(layout.copy(panelX = layout.panelX - 0.02f)) }
                 CalibBtn("→") { onChange(layout.copy(panelX = layout.panelX + 0.02f)) }
@@ -296,12 +339,12 @@ fun CalibrationPanel(
             }
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("键大小", color = Color.White, fontSize = 13.sp)
+                Text(tr("键大小"), color = Color.White, fontSize = 13.sp)
                 Spacer(Modifier.weight(1f))
-                CalibBtn("键-") { onChange(layout.copy(keyW = layout.keyW - 0.01f, keyH = layout.keyH - 0.008f)) }
-                CalibBtn("键+") { onChange(layout.copy(keyW = layout.keyW + 0.01f, keyH = layout.keyH + 0.008f)) }
-                CalibBtn("行距-") { onChange(layout.copy(rowGap = layout.rowGap - 0.005f)) }
-                CalibBtn("行距+") { onChange(layout.copy(rowGap = layout.rowGap + 0.005f)) }
+                CalibBtn("${tr("键大小")}-") { onChange(layout.copy(keyW = layout.keyW - 0.01f, keyH = layout.keyH - 0.008f)) }
+                CalibBtn("${tr("键大小")}+") { onChange(layout.copy(keyW = layout.keyW + 0.01f, keyH = layout.keyH + 0.008f)) }
+                CalibBtn("${tr("行距")}-") { onChange(layout.copy(rowGap = layout.rowGap - 0.005f)) }
+                CalibBtn("${tr("行距")}+") { onChange(layout.copy(rowGap = layout.rowGap + 0.005f)) }
             }
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -311,7 +354,7 @@ fun CalibrationPanel(
                     shape = RoundedCornerShape(10.dp),
                     color = AccentColor
                 ) {
-                    Text("保存", color = Color(0xFF0E0A1F), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                    Text(tr("保存"), color = Color(0xFF0E0A1F), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Surface(
@@ -319,7 +362,7 @@ fun CalibrationPanel(
                     shape = RoundedCornerShape(10.dp),
                     color = Color(0x335F6368)
                 ) {
-                    Text("重置", color = Color.White, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                    Text(tr("重置"), color = Color.White, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
                 }
             }
         }

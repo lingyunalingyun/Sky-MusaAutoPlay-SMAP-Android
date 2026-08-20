@@ -96,5 +96,5 @@ class CloudApi(context: Context) {
 
     private fun encode(value: String) = URLEncoder.encode(value, "UTF-8")
 
-    companion object { const val BASE = "http://musetreehouse.com" }
+    companion object { const val BASE = "https://musetreehouse.com" }
 }

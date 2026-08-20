@@ -25,10 +25,13 @@ import android.widget.ListView
 import android.widget.TextView
 import com.smap.android.MainActivity
 import com.smap.android.data.LibraryItem
+import com.smap.android.data.LibraryPreferences
 import com.smap.android.data.SongRepository
 import com.smap.android.engine.KeyLayout
 import com.smap.android.engine.KeyLayoutStore
 import com.smap.android.engine.PlayerEngine
+import com.smap.android.i18n.AppLocale
+import com.smap.android.i18n.tr
 import com.smap.android.model.SkySong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -85,6 +88,7 @@ class FloatService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        AppLocale.set(LibraryPreferences(this).language())
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         layout = KeyLayoutStore.load(this)
         songs = SongRepository(this).loadSongs()
@@ -113,15 +117,15 @@ class FloatService : Service() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "SMAP 演奏", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CHANNEL_ID, tr("SMAP 演奏"), NotificationManager.IMPORTANCE_LOW)
             )
         }
         val pi = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
         val notif = Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("SMAP 演奏")
-            .setContentText("悬浮球运行中，点击展开选曲面板")
+            .setContentTitle(tr("SMAP 演奏"))
+            .setContentText(tr("悬浮球运行中，点击展开选曲面板"))
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(pi)
             .setOngoing(true)
@@ -220,7 +224,7 @@ class FloatService : Service() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             addView(TextView(this@FloatService).apply {
-                text = "🎹 SMAP 选曲"
+                text = "🎹 ${tr("SMAP 选曲")}"
                 setTextColor(Color.WHITE)
                 textSize = 17f
                 typeface = Typeface.DEFAULT_BOLD
@@ -242,7 +246,7 @@ class FloatService : Service() {
         val currentLabel = TextView(this).apply {
             setTextColor(0xFF9CA3AF.toInt())
             textSize = 13f
-            text = "未选曲"
+            text = tr("未选曲")
         }
         panel.addView(currentLabel)
 
@@ -293,7 +297,7 @@ class FloatService : Service() {
 
         // 播放控制
         val playBtn = TextView(this).apply {
-            text = "▶ 开始弹奏"
+            text = "▶ ${tr("开始弹奏")}"
             textSize = 16f
             gravity = Gravity.CENTER
             setTextColor(0xFF0E0A1F.toInt())
