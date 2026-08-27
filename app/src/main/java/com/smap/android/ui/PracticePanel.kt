@@ -90,7 +90,8 @@ fun PracticePanel(
         )
 
         Column(
-            modifier = Modifier.align(Alignment.Center).fillMaxWidth(0.68f).fillMaxHeight().padding(top = 14.dp, bottom = 8.dp),
+            modifier = Modifier.align(Alignment.CenterStart).fillMaxWidth(0.78f).fillMaxHeight()
+                .padding(start = 88.dp, top = 2.dp, end = 8.dp, bottom = 2.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -104,7 +105,7 @@ fun PracticePanel(
                     onNext = { if (page + 1 < pageCount) page++ },
                     onSelect = { selected -> step = selected; page = selected / 32 }
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(5.dp))
             }
             PracticeKeyboard(
                 pitch = pitch,
@@ -170,7 +171,7 @@ private fun PracticeKeyboard(
     val semitones = intArrayOf(0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24)
     Column(
         modifier = Modifier.background(practicePanel, RoundedCornerShape(14.dp)).border(1.dp, Color(0xFF38383C), RoundedCornerShape(14.dp))
-            .padding(if (compact) 9.dp else 18.dp),
+            .padding(if (compact) 6.dp else 18.dp),
         verticalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 7.dp)
     ) {
         repeat(3) { row ->
@@ -179,7 +180,7 @@ private fun PracticeKeyboard(
                     val key = row * 5 + column
                     val color = when (key) { in current -> practiceAccent; in next -> Color(0xFF405F88); else -> practiceKey }
                     Box(
-                        modifier = Modifier.size(if (compact) 50.dp else 76.dp, if (compact) 42.dp else 70.dp)
+                        modifier = Modifier.size(if (compact) 43.dp else 76.dp, if (compact) 28.dp else 70.dp)
                             .background(color, RoundedCornerShape(7.dp)).border(1.dp, practiceBorder, RoundedCornerShape(7.dp))
                             .pointerInput(key) {
                                 detectTapGestures(onPress = {
@@ -190,7 +191,7 @@ private fun PracticeKeyboard(
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        Canvas(Modifier.size(if (compact) 22.dp else 31.dp)) {
+                        Canvas(Modifier.size(if (compact) 16.dp else 31.dp)) {
                             if (key % 2 == 0) drawCircle(Color(0xFFD8D8DF), style = Stroke(1.5.dp.toPx()))
                             else {
                                 val c = center
@@ -241,13 +242,20 @@ private fun PageButton(symbol: String, number: Int, onClick: () -> Unit) {
 
 @Composable
 private fun MiniStep(keys: IntArray?, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    Canvas(modifier.height(34.dp).background(if (selected) Color(0xFF303F55) else Color(0xFF242426), RoundedCornerShape(4.dp))
-        .border(1.dp, if (selected) practiceAccent else Color(0xFF3A3A3D), RoundedCornerShape(4.dp)).clickable(onClick = onClick).padding(5.dp)) {
+    Canvas(modifier.height(26.dp).background(if (selected) Color(0xFF303F55) else Color(0xFF242426), RoundedCornerShape(4.dp))
+        .border(1.dp, if (selected) practiceAccent else Color(0xFF3A3A3D), RoundedCornerShape(4.dp)).clickable(onClick = onClick).padding(4.dp)) {
         val active = (keys ?: intArrayOf()).toSet()
+        val cellW = size.width / 5f
+        val cellH = size.height / 3f
+        val baseRadius = minOf(cellW, cellH) * 0.18f
         repeat(15) { key ->
             val x = (key % 5 + .5f) * size.width / 5f
             val y = (key / 5 + .5f) * size.height / 3f
-            drawCircle(if (key in active) practiceAccent else Color(0xFF66666B), radius = if (key in active) 2.5.dp.toPx() else 1.4.dp.toPx(), center = Offset(x, y))
+            drawCircle(
+                if (key in active) practiceAccent else Color(0xFF77777D),
+                radius = if (key in active) baseRadius * 1.45f else baseRadius,
+                center = Offset(x, y)
+            )
         }
     }
 }

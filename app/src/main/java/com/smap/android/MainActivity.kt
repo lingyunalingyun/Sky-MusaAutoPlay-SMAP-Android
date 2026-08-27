@@ -106,6 +106,7 @@ import com.smap.android.service.FloatService
 import com.smap.android.service.SMAPAccessibilityService
 import com.smap.android.ui.SMAPPlayButton
 import com.smap.android.ui.PracticePanel
+import com.smap.android.ui.ComposerScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -241,6 +242,9 @@ fun MainScreen(onGameModeChange: (Boolean) -> Unit = {}) {
     val keyFlashes = remember { mutableStateListOf(*Array(15) { 0 }) }
     var moreItem by remember { mutableStateOf<LibraryItem?>(null) }
     var practiceItem by remember { mutableStateOf<LibraryItem?>(null) }
+    var composerOpen by remember { mutableStateOf(false) }
+    var composerItem by remember { mutableStateOf<LibraryItem?>(null) }
+    var composerFileName by remember { mutableStateOf<String?>(null) }
     var deleteItem by remember { mutableStateOf<LibraryItem?>(null) }
     var showPlaylist by remember { mutableStateOf(false) }
     var showSpeed by remember { mutableStateOf(false) }
@@ -440,7 +444,35 @@ fun MainScreen(onGameModeChange: (Boolean) -> Unit = {}) {
         isPaused = false
     }
 
-    Column(
+    if (composerOpen) {
+        ComposerScreen(
+            source = composerItem,
+            instrumentLabel = instrument,
+            onInstrument = { showInstrument = true },
+            onPreview = { key -> audioEngine.play(key); keyFlashes[key]++ },
+            onSave = { song, saveAsCopy ->
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        repository.saveComposed(
+                            song = song,
+                            originalFileName = composerFileName,
+                            coverBytes = composerItem?.coverBytes,
+                            saveAsCopy = saveAsCopy
+                        )
+                    }
+                    result.onSuccess { saved ->
+                        composerFileName = saved.fileName
+                        items = withContext(Dispatchers.IO) { repository.loadSongs() }
+                        selectedItem = items.find { it.fileName == saved.fileName }
+                        Toast.makeText(context, trf("已保存曲谱「%s」", saved.song.name), Toast.LENGTH_SHORT).show()
+                    }.onFailure { error ->
+                        Toast.makeText(context, "${tr("保存失败")}：${error.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onBack = { composerOpen = false; composerItem = null; composerFileName = null }
+        )
+    } else Column(
         modifier = Modifier
             .fillMaxSize()
             .background(WindowColor)
@@ -580,6 +612,12 @@ fun MainScreen(onGameModeChange: (Boolean) -> Unit = {}) {
                         audioEngine.play(key)
                         keyFlashes[key]++
                     },
+                    onCreate = {
+                        stopPlayback()
+                        composerItem = null
+                        composerFileName = null
+                        composerOpen = true
+                    },
                     onPractice = {
                         val target = nowPlaying ?: selectedItem
                         if (target == null) Toast.makeText(context, tr("请先选择一首歌曲"), Toast.LENGTH_SHORT).show()
@@ -716,6 +754,13 @@ fun MainScreen(onGameModeChange: (Boolean) -> Unit = {}) {
             inPlaylist = item.fileName in playlistFiles,
             onDismiss = { moreItem = null },
             onPlay = { moreItem = null; addToPlaylistAndPlay(item) },
+            onEdit = {
+                moreItem = null
+                stopPlayback()
+                composerItem = item
+                composerFileName = item.fileName
+                composerOpen = true
+            },
             onFavorite = { favorites = preferences.toggleFavorite(item.fileName); moreItem = null },
             onAddPlaylist = {
                 if (item.fileName !in playlistFiles) {
@@ -1302,6 +1347,7 @@ fun RightPanel(
     keyFlashes: List<Int> = List(15) { 0 },
     pitch: Int = 0,
     onKeyPress: (Int) -> Unit = {},
+    onCreate: () -> Unit = {},
     onPractice: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -1324,11 +1370,19 @@ fun RightPanel(
             if (rowIndex < 2) Spacer(Modifier.height(10.dp))
         }
         Spacer(Modifier.height(10.dp))
-        Box(
-            Modifier.fillMaxWidth().height(42.dp).background(Color(0xFF00A82D), RoundedCornerShape(7.dp)).clickable(onClick = onPractice),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(tr("练习"), color = Color.White, fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+        Row(Modifier.fillMaxWidth().height(42.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(
+                Modifier.weight(1f).fillMaxHeight().background(Color(0xFFD08A18), RoundedCornerShape(7.dp)).clickable(onClick = onCreate),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(tr("创建"), color = Color.White, fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            }
+            Box(
+                Modifier.weight(1f).fillMaxHeight().background(Color(0xFF00A82D), RoundedCornerShape(7.dp)).clickable(onClick = onPractice),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(tr("练习"), color = Color.White, fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            }
         }
     }
 }
@@ -1550,6 +1604,7 @@ fun SongOptionsDialog(
     inPlaylist: Boolean,
     onDismiss: () -> Unit,
     onPlay: () -> Unit,
+    onEdit: () -> Unit,
     onFavorite: () -> Unit,
     onAddPlaylist: () -> Unit,
     onDelete: () -> Unit
@@ -1561,6 +1616,7 @@ fun SongOptionsDialog(
         text = {
             Column {
                 TextButton(onClick = onPlay) { Text(tr("播放")) }
+                TextButton(onClick = onEdit) { Text(tr("编辑曲谱")) }
                 TextButton(onClick = onAddPlaylist, enabled = !inPlaylist) {
                     Text(tr(if (inPlaylist) "已在播放列表" else "添加到播放列表"))
                 }

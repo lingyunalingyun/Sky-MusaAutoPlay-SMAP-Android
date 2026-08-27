@@ -84,6 +84,29 @@ class SongRepository(private val context: Context) {
         LibraryItem(target.name, song)
     }
 
+    /** 保存 Android 编曲器生成的曲谱；编辑内置曲谱时会在本地创建同名覆盖副本。 */
+    fun saveComposed(
+        song: SkySong,
+        originalFileName: String? = null,
+        coverBytes: ByteArray? = null,
+        saveAsCopy: Boolean = false
+    ): Result<LibraryItem> = runCatching {
+        require(song.songNotes.isNotEmpty()) { "曲谱至少需要一个音符" }
+        importedDir.mkdirs()
+        val safeTitle = song.name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "未命名" }
+        val requested = originalFileName
+            ?.takeIf { !saveAsCopy && (it.endsWith(".json", true) || it.endsWith(".txt", true)) }
+            ?: "$safeTitle.json"
+        val target = if (saveAsCopy || originalFileName == null) uniqueFile(requested) else File(importedDir, requested)
+        val array = JSONArray(song.toJson())
+        if (coverBytes != null) {
+            array.getJSONObject(0).put("cover", Base64.encodeToString(coverBytes, Base64.NO_WRAP))
+        }
+        target.writeText(array.toString(), Charsets.UTF_8)
+        unhide(target.name)
+        LibraryItem(target.name, song, coverBytes)
+    }
+
     fun deleteSong(fileName: String): Result<Unit> = runCatching {
         val imported = File(importedDir, fileName)
         if (imported.exists() && !imported.delete()) error("无法删除曲谱文件")
