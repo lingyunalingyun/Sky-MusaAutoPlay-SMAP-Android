@@ -34,6 +34,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -484,6 +485,11 @@ fun MainScreen(onGameModeChange: (Boolean) -> Unit = {}) {
                     pitch = pitch,
                     positionMs = positionMs,
                     playing = isPlaying,
+                    paused = isPaused,
+                    playMode = playMode,
+                    favorite = practiceItem!!.fileName in favorites,
+                    instrumentLabel = instrument,
+                    speedLabel = if (randomSpeed) tr("随机速度") else "${speed}×",
                     onPositionChange = { positionMs = it },
                     gameMode = gameMode,
                     onBack = { practiceItem = null },
@@ -496,6 +502,26 @@ fun MainScreen(onGameModeChange: (Boolean) -> Unit = {}) {
                             onGameModeChange(true)
                         } else showAccessibilityDisclosure = true
                     },
+                    onPlay = {
+                        if (isPlaying && !isPaused) { playerEngine.pause(); isPaused = true }
+                        else if (isPlaying) { playerEngine.resume(); isPaused = false }
+                        else startPlayback(practiceItem!!, false, playlist, positionMs)
+                    },
+                    onPrevious = {
+                        val target = (positionMs - 2_000L).coerceAtLeast(0L)
+                        positionMs = target
+                        if (isPlaying) startPlayback(practiceItem!!, false, playlist, target)
+                    },
+                    onNext = {
+                        val target = (positionMs + 2_000L).coerceAtMost(practiceItem!!.song.durationMs)
+                        positionMs = target
+                        if (isPlaying) startPlayback(practiceItem!!, false, playlist, target)
+                    },
+                    onPlayMode = { playMode = (playMode + 1) % 3; preferences.savePlayMode(playMode) },
+                    onPlaylist = { showPlaylist = true },
+                    onFavorite = { favorites = preferences.toggleFavorite(practiceItem!!.fileName) },
+                    onInstrument = { showInstrument = true },
+                    onSpeed = { showSpeed = true },
                     onKeyDown = { key -> audioEngine.play(key); keyFlashes[key]++ }
                 )
             }
@@ -634,7 +660,7 @@ fun MainScreen(onGameModeChange: (Boolean) -> Unit = {}) {
                 )
             }
         }
-        BottomBar(
+        if (practiceItem == null) BottomBar(
             item = nowPlaying ?: selectedItem,
             playing = isPlaying,
             paused = isPaused,
@@ -1375,7 +1401,14 @@ fun RightPanel(
             Row(modifier = Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 repeat(5) { columnIndex ->
                     val keyIndex = rowIndex * 5 + columnIndex
-                    KeyboardKey(noteName(scaleSemitones[keyIndex] + pitch), keyFlashes[keyIndex], { onKeyPress(keyIndex) }, Modifier.weight(1f))
+                    Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                        KeyboardKey(
+                            label = noteName(scaleSemitones[keyIndex] + pitch),
+                            flash = keyFlashes[keyIndex],
+                            onClick = { onKeyPress(keyIndex) },
+                            modifier = Modifier.fillMaxHeight().aspectRatio(1f)
+                        )
+                    }
                 }
             }
             if (rowIndex < 2) Spacer(Modifier.height(10.dp))
@@ -1595,7 +1628,7 @@ private fun PlayerPill(label: String, onClick: () -> Unit, active: Boolean = fal
 }
 
 @Composable
-private fun TransportVector(type: String, modifier: Modifier = Modifier, active: Boolean = false) {
+fun TransportVector(type: String, modifier: Modifier = Modifier, active: Boolean = false) {
     val materialPath = remember(type) {
         val data = when (type) {
             "repeat" -> "M7 7h10v1.79c0 .45.54.67.85.35l2.79-2.79c.2-.2.2-.51 0-.71l-2.79-2.79c-.31-.31-.85-.09-.85.36V5H6c-.55 0-1 .45-1 1v4c0 .55.45 1 1 1s1-.45 1-1V7zm10 10H7v-1.79c0-.45-.54-.67-.85-.35l-2.79 2.79c-.2.2-.2.51 0 .71l2.79 2.79c.31.31.85.09.85-.36V19h11c.55 0 1-.45 1-1v-4c0-.55-.45-1-1-1s-1 .45-1 1v3z"
@@ -1890,7 +1923,7 @@ private fun MoreVector(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun FavoriteStarIcon(filled: Boolean, modifier: Modifier = Modifier) {
+fun FavoriteStarIcon(filled: Boolean, modifier: Modifier = Modifier) {
     val path = remember(filled) {
         PathParser().parsePathString(
             if (filled) {

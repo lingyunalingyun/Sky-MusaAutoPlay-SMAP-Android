@@ -3,7 +3,9 @@ package com.smap.android.ui
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.SystemClock
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable as FloatAnimatable
 import androidx.compose.animation.core.CubicBezierEasing
@@ -26,7 +28,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -40,14 +41,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.smap.android.data.LibraryItem
+import com.smap.android.FavoriteStarIcon
+import com.smap.android.TransportVector
 import com.smap.android.i18n.tr
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -64,10 +70,23 @@ fun PracticePanel(
     pitch: Int,
     positionMs: Long,
     playing: Boolean,
+    paused: Boolean,
+    playMode: Int,
+    favorite: Boolean,
+    instrumentLabel: String,
+    speedLabel: String,
     onPositionChange: (Long) -> Unit,
     gameMode: Boolean,
     onBack: () -> Unit,
     onGameMode: () -> Unit,
+    onPlay: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onPlayMode: () -> Unit,
+    onPlaylist: () -> Unit,
+    onFavorite: () -> Unit,
+    onInstrument: () -> Unit,
+    onSpeed: () -> Unit,
     onKeyDown: (Int) -> Unit
 ) {
     val steps = remember(item.fileName) { buildPracticeSteps(item) }
@@ -120,13 +139,11 @@ fun PracticePanel(
                 .clickable(onClick = onBack).padding(horizontal = 22.dp, vertical = 11.dp)
         )
 
-        Column(
-            modifier = Modifier.align(Alignment.CenterStart).fillMaxWidth(0.78f).fillMaxHeight()
-                .padding(start = 88.dp, top = 2.dp, end = 8.dp, bottom = 2.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            if (readMode) {
+        if (readMode) {
+            Column(
+                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(0.94f).padding(top = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 SheetWall(
                     steps = steps.map { it.keys },
                     currentStep = step,
@@ -135,34 +152,47 @@ fun PracticePanel(
                     onPrevious = { if (page > 0) page-- },
                     onNext = { if (page + 1 < pageCount) page++ },
                     onSelect = { selected ->
-                        val target = if (steps.getOrNull(selected)?.keys?.isEmpty() == true) nextNoteStep(steps, selected) else selected
-                        if (target in steps.indices) {
-                            step = target; page = target / 32; held.clear(); recentPresses.clear(); onPositionChange(steps[target].timeMs)
+                        if (selected in steps.indices) {
+                            val target = if (steps[selected].keys.isEmpty()) nextNoteStep(steps, selected) else selected
+                            if (target < steps.size) {
+                                step = target; page = target / 32; held.clear(); recentPresses.clear(); onPositionChange(steps[target].timeMs)
+                            }
                         }
                     }
                 )
-                Spacer(Modifier.height(5.dp))
+                Spacer(Modifier.height(7.dp))
+                PracticeKeyboard(
+                    pitch = pitch,
+                    current = (steps.getOrNull(keyboardStep)?.keys ?: intArrayOf()).toSet(),
+                    next = (steps.getOrNull(nextKeyboardStep)?.keys ?: intArrayOf()).toSet(),
+                    compact = true,
+                    onDown = ::press,
+                    onUp = { held -= it }
+                )
             }
-            PracticeKeyboard(
-                pitch = pitch,
-                current = (steps.getOrNull(keyboardStep)?.keys ?: intArrayOf()).toSet(),
-                next = (steps.getOrNull(nextKeyboardStep)?.keys ?: intArrayOf()).toSet(),
-                compact = readMode,
-                onDown = ::press,
-                onUp = { held -= it }
-            )
+        } else {
+            Box(Modifier.align(Alignment.Center)) {
+                PracticeKeyboard(
+                    pitch = pitch,
+                    current = (steps.getOrNull(keyboardStep)?.keys ?: intArrayOf()).toSet(),
+                    next = (steps.getOrNull(nextKeyboardStep)?.keys ?: intArrayOf()).toSet(),
+                    compact = false,
+                    onDown = ::press,
+                    onUp = { held -= it }
+                )
+            }
         }
 
         Column(
-            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 18.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
             PracticeSwitch(tr("读谱模式"), readMode) { readMode = it; page = step / 32 }
             PracticeSwitch(tr("打点模式"), metronome) { metronome = it }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(tr("打点速度"), color = Color.White, fontSize = 14.sp, modifier = Modifier.width(82.dp))
+                Text(tr("打点速度"), color = Color.White, fontSize = 11.sp, modifier = Modifier.width(72.dp))
                 Text(
-                    "$bpm BPM", color = if (metronome) Color.White else Color(0xFF77777C), fontSize = 12.sp,
+                    "$bpm BPM", color = if (metronome) Color.White else Color(0xFF77777C), fontSize = 10.sp,
                     modifier = Modifier.background(Color(0xFF2B2B2E), RoundedCornerShape(14.dp))
                         .clickable(enabled = metronome) { bpm = if (bpm >= 180) 60 else bpm + 15 }
                         .padding(horizontal = 10.dp, vertical = 6.dp)
@@ -171,15 +201,103 @@ fun PracticePanel(
             PracticeSwitch(tr("游戏浮窗"), gameMode) { onGameMode() }
         }
 
+        PracticeSongControls(
+            item = item,
+            playing = playing,
+            paused = paused,
+            playMode = playMode,
+            favorite = favorite,
+            instrumentLabel = instrumentLabel,
+            speedLabel = speedLabel,
+            onPlay = onPlay,
+            onPrevious = onPrevious,
+            onNext = onNext,
+            onPlayMode = onPlayMode,
+            onPlaylist = onPlaylist,
+            onFavorite = onFavorite,
+            onInstrument = onInstrument,
+            onSpeed = onSpeed,
+            modifier = Modifier.align(Alignment.BottomStart).padding(start = 76.dp, bottom = 10.dp)
+        )
+
+        if (readMode) {
+            Column(Modifier.align(Alignment.BottomEnd).padding(end = 175.dp, bottom = 12.dp)) {
+                Text("BPM: ${item.song.bpm}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("时长: ${formatPracticeDuration(item.song.durationMs)}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("音符数: ${item.song.songNotes.size}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+
         Metronome(enabled = metronome, bpm = bpm)
     }
 }
 
 @Composable
+private fun PracticeSongControls(
+    item: LibraryItem,
+    playing: Boolean,
+    paused: Boolean,
+    playMode: Int,
+    favorite: Boolean,
+    instrumentLabel: String,
+    speedLabel: String,
+    onPlay: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onPlayMode: () -> Unit,
+    onPlaylist: () -> Unit,
+    onFavorite: () -> Unit,
+    onInstrument: () -> Unit,
+    onSpeed: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val cover = remember(item.coverBytes) {
+        item.coverBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+    }
+    Column(modifier.width(190.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(52.dp).background(Color(0xFF909090), RoundedCornerShape(6.dp)), contentAlignment = Alignment.Center) {
+                if (cover != null) Image(cover, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                else Text(tr("封面"), color = Color.Black, fontSize = 10.sp)
+            }
+            Spacer(Modifier.width(6.dp))
+            Column(Modifier.weight(1f)) {
+                Text(item.song.name, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(item.song.author ?: tr("未知"), color = Color.White, fontSize = 8.sp, maxLines = 1)
+                Text(item.song.transcribedBy ?: tr("未知"), color = Color.White, fontSize = 8.sp, maxLines = 1)
+            }
+            FavoriteStarIcon(favorite, Modifier.size(28.dp).clickable(onClick = onFavorite).padding(4.dp))
+        }
+        Spacer(Modifier.height(7.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            TransportVector(if (playMode == 1) "repeat_one" else if (playMode == 2) "shuffle" else "repeat", Modifier.size(28.dp).clickable(onClick = onPlayMode).padding(3.dp))
+            TransportVector("previous", Modifier.size(30.dp).clickable(onClick = onPrevious).padding(4.dp))
+            SMAPPlayButton(playing = playing && !paused, size = 46.dp, onClick = onPlay)
+            TransportVector("next", Modifier.size(30.dp).clickable(onClick = onNext).padding(4.dp))
+            TransportVector("list", Modifier.size(30.dp).clickable(onClick = onPlaylist).padding(5.dp))
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(instrumentLabel, color = Color.White, fontSize = 9.sp, modifier = Modifier.border(1.dp, Color(0xFF66666D), RoundedCornerShape(12.dp)).clickable(onClick = onInstrument).padding(horizontal = 8.dp, vertical = 3.dp))
+            Text(speedLabel, color = Color.White, fontSize = 9.sp, modifier = Modifier.border(1.dp, Color(0xFF66666D), RoundedCornerShape(12.dp)).clickable(onClick = onSpeed).padding(horizontal = 8.dp, vertical = 3.dp))
+        }
+    }
+}
+
+@Composable
 private fun PracticeSwitch(label: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = Color.White, fontSize = 14.sp, modifier = Modifier.width(82.dp))
-        Switch(checked = checked, onCheckedChange = onChecked)
+    Row(Modifier.height(28.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = Color.White, fontSize = 11.sp, modifier = Modifier.width(72.dp))
+        Box(
+            Modifier.width(40.dp).height(22.dp)
+                .background(if (checked) Color(0xFF00AF32) else Color(0xFF303034), RoundedCornerShape(11.dp))
+                .border(1.dp, Color(0xFF66666D), RoundedCornerShape(11.dp))
+                .clickable { onChecked(!checked) }
+                .padding(2.dp),
+            contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
+        ) {
+            Box(Modifier.size(18.dp).background(Color(0xFFD0D0D3), CircleShape))
+        }
     }
 }
 
@@ -205,11 +323,13 @@ private fun PracticeKeyboard(
     onUp: (Int) -> Unit
 ) {
     val semitones = intArrayOf(0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24)
-    val keyWidth = if (compact) 43.dp else 76.dp
-    val keyHeight = if (compact) 28.dp else 70.dp
-    val horizontalGap = if (compact) 4.dp else 8.dp
-    val verticalGap = if (compact) 3.dp else 7.dp
-    val keyboardPadding = if (compact) 6.dp else 18.dp
+    // The complete mobile practice screen also owns the lower-left controls.
+    // Keep both states inside the same central safe column so the keyboard never collides with them.
+    val keyWidth = 48.dp
+    val keyHeight = keyWidth
+    val horizontalGap = 7.dp
+    val verticalGap = 7.dp
+    val keyboardPadding = 6.dp
     val touchFlashes = remember { androidx.compose.runtime.mutableStateListOf(*Array(15) { 0 }) }
     Column(
         modifier = Modifier.background(practicePanel, RoundedCornerShape(14.dp)).border(1.dp, Color(0xFF38383C), RoundedCornerShape(14.dp))
@@ -306,11 +426,12 @@ private fun SheetWall(
     steps: List<IntArray>, currentStep: Int, page: Int, pageCount: Int,
     onPrevious: () -> Unit, onNext: () -> Unit, onSelect: (Int) -> Unit
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         PageButton("‹", page + 1, onPrevious)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Spacer(Modifier.weight(1f))
+        Column(Modifier.width(448.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             repeat(4) { row ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     repeat(8) { column ->
                         val index = page * 32 + row * 8 + column
                         MiniStep(steps.getOrNull(index), index == currentStep, Modifier.weight(1f)) {
@@ -320,6 +441,7 @@ private fun SheetWall(
                 }
             }
         }
+        Spacer(Modifier.weight(1f))
         PageButton("›", pageCount, onNext)
     }
 }
@@ -335,8 +457,15 @@ private fun PageButton(symbol: String, number: Int, onClick: () -> Unit) {
 
 @Composable
 private fun MiniStep(keys: IntArray?, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    Canvas(modifier.height(26.dp).background(if (selected) Color(0xFF303F55) else Color(0xFF242426), RoundedCornerShape(4.dp))
-        .border(1.dp, if (selected) practiceAccent else Color(0xFF3A3A3D), RoundedCornerShape(4.dp)).clickable(onClick = onClick).padding(4.dp)) {
+    val opacity = when {
+        keys == null -> .35f
+        keys.isEmpty() && !selected -> .5f
+        else -> 1f
+    }
+    Canvas(modifier.height(32.dp).graphicsLayer { alpha = opacity }
+        .background(if (selected) Color(0xFF303F55) else Color(0xFF242426), RoundedCornerShape(4.dp))
+        .border(if (selected) 2.dp else 1.dp, if (selected) practiceAccent else Color(0xFF3A3A3D), RoundedCornerShape(4.dp))
+        .clickable(enabled = keys != null, onClick = onClick).padding(4.dp)) {
         val active = (keys ?: intArrayOf()).toSet()
         val cellW = size.width / 5f
         val cellH = size.height / 3f
@@ -366,7 +495,7 @@ private fun buildPracticeSteps(item: LibraryItem): List<PracticeStep> {
         while (index < notes.size && notes[index].time - time <= 20) keys += notes[index++].key
         cells += time to keys.toIntArray()
     }
-    val msPerBeat = if (item.song.bpm > 0) 60_000.0 / item.song.bpm else 500.0
+    val msPerBeat = refineMsPerBeat(cells.map { it.first.toDouble() }, item.song.bpm.takeIf { it > 0 } ?: 120)
     val beatPositions = cells.map { it.first / msPerBeat }
     val subdivision = listOf(1, 2, 3, 4, 6, 8).firstOrNull { sd ->
         beatPositions.all { beat -> kotlin.math.abs(beat * sd - kotlin.math.round(beat * sd)) <= .18 }
@@ -383,6 +512,29 @@ private fun buildPracticeSteps(item: LibraryItem): List<PracticeStep> {
     return result
 }
 
+/** Match the desktop loader: stored BPM is integral, so refine it before building the beat grid. */
+private fun refineMsPerBeat(times: List<Double>, nominalBpm: Int): Double {
+    val positiveTimes = times.filter { it > 0 }
+    if (positiveTimes.isEmpty()) return 60_000.0 / nominalBpm
+    var bestBpm = nominalBpm.toDouble()
+    var bestError = Double.MAX_VALUE
+    var candidate = nominalBpm - 1.0
+    while (candidate <= nominalBpm + 1.0 + 1e-9) {
+        val cellMs = 15_000.0 / candidate
+        var error = 0.0
+        positiveTimes.forEach { time ->
+            val remainder = time % cellMs
+            error += minOf(remainder, cellMs - remainder)
+        }
+        if (error < bestError) {
+            bestError = error
+            bestBpm = candidate
+        }
+        candidate += .01
+    }
+    return 60_000.0 / bestBpm
+}
+
 private fun nextNoteStep(steps: List<PracticeStep>, from: Int): Int {
     for (index in from.coerceAtLeast(0) until steps.size) if (steps[index].keys.isNotEmpty()) return index
     return steps.size
@@ -394,4 +546,9 @@ private fun nearestStep(steps: List<PracticeStep>, timeMs: Long): Int =
 private fun noteName(semitone: Int): String {
     val names = arrayOf("C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B")
     return names[((semitone % 12) + 12) % 12]
+}
+
+private fun formatPracticeDuration(durationMs: Long): String {
+    val totalSeconds = durationMs.coerceAtLeast(0) / 1000
+    return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
 }
