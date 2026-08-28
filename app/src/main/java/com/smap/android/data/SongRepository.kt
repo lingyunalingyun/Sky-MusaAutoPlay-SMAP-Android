@@ -56,15 +56,16 @@ class SongRepository(private val context: Context) {
         LibraryItem(target.name, song, extractCover(target.name, bytes))
     }
 
-    fun importDownloaded(name: String, bytes: ByteArray): Result<LibraryItem> = runCatching {
+    fun importDownloaded(name: String, bytes: ByteArray, coverBytes: ByteArray? = null): Result<LibraryItem> = runCatching {
         val safeName = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "云端曲谱" }
         val fileName = if (safeName.endsWith(".txt", true) || safeName.endsWith(".json", true)) safeName else "$safeName.txt"
         val song = parse(fileName, bytes) ?: error("下载的曲谱格式无效")
         importedDir.mkdirs()
         val target = uniqueFile(fileName)
         target.writeBytes(bytes)
+        if (coverBytes != null) coverFile(target.name).writeBytes(coverBytes)
         unhide(target.name)
-        LibraryItem(target.name, song, extractCover(target.name, bytes))
+        LibraryItem(target.name, song, coverBytes ?: extractCover(target.name, bytes))
     }
 
     fun importMidi(
@@ -110,6 +111,7 @@ class SongRepository(private val context: Context) {
     fun deleteSong(fileName: String): Result<Unit> = runCatching {
         val imported = File(importedDir, fileName)
         if (imported.exists() && !imported.delete()) error("无法删除曲谱文件")
+        coverFile(fileName).delete()
         val hidden = prefs.getStringSet("hidden_songs", emptySet()).orEmpty().toMutableSet()
         hidden.add(fileName)
         prefs.edit().putStringSet("hidden_songs", hidden).apply()
@@ -132,7 +134,7 @@ class SongRepository(private val context: Context) {
 
     private fun extractCover(fileName: String, bytes: ByteArray): ByteArray? {
         if (fileName.endsWith(".mid", true) || fileName.endsWith(".midi", true)) return null
-        return runCatching {
+        val embedded = runCatching {
             val text = decodeText(bytes)
             if (!text.contains("\"cover\"")) return null
             val array = JSONArray(text)
@@ -140,7 +142,15 @@ class SongRepository(private val context: Context) {
             if (encoded.startsWith("data:")) encoded = encoded.substringAfter(',')
             encoded.takeIf { it.isNotBlank() }?.let { Base64.decode(it, Base64.DEFAULT) }
         }.getOrNull()
+        return embedded ?: coverFile(fileName).takeIf { it.isFile }?.readBytes()
     }
+
+    fun saveCover(fileName: String, bytes: ByteArray) {
+        importedDir.mkdirs()
+        coverFile(fileName).writeBytes(bytes)
+    }
+
+    private fun coverFile(fileName: String) = File(importedDir, ".$fileName.cover")
 
     private fun queryName(uri: Uri): String {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->

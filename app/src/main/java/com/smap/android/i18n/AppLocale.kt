@@ -128,6 +128,11 @@ object AppLocale {
         "音符" to arrayOf("音符", "音符", "notes", "音符"),
         "游戏模式" to arrayOf("游戏模式", "遊戲模式", "Game mode", "ゲームモード"),
         "游戏浮窗" to arrayOf("游戏浮窗", "遊戲浮窗", "Game overlay", "ゲームオーバーレイ"),
+        "键位调整" to arrayOf("键位调整", "鍵位調整", "Calibrate keys", "キー位置調整"),
+        "打开软件" to arrayOf("打开软件", "開啟軟體", "Open app", "アプリを開く"),
+        "跟弹模式" to arrayOf("跟弹模式", "跟彈模式", "Follow mode", "追従練習"),
+        "将方框移动到按键位置" to arrayOf("将方框移动到按键位置", "將方框移動到按鍵位置", "Move each box onto a game key", "各枠をゲームのキー位置へ移動"),
+        "确认" to arrayOf("确认", "確認", "Confirm", "確認"),
         "游戏模式需要无障碍权限" to arrayOf("游戏模式需要无障碍权限", "遊戲模式需要無障礙權限", "Game Mode requires Accessibility", "ゲームモードにはユーザー補助が必要です"),
         "无障碍权限用途说明" to arrayOf(
             "SMAP 使用 Android 无障碍功能，按照你选择的曲谱和校准位置模拟点击光遇琴键。此功能仅在你主动开启游戏模式时运行。SMAP 不读取屏幕内容，也不收集、存储或分享个人及敏感数据。你可以拒绝授权并继续使用普通播放功能，也可以随时在系统设置中关闭此权限。",

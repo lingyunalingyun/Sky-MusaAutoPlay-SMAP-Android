@@ -24,6 +24,11 @@ class SMAPAccessibilityService : AccessibilityService() {
         fun tap(x: Float, y: Float, durationMs: Long = 18) {
             instance?.dispatchTap(x, y, durationMs)
         }
+
+        /** 同时点击多个坐标；一次 dispatchGesture 保证和弦不会互相取消。 */
+        fun tapMany(points: List<Pair<Float, Float>>, durationMs: Long = 24) {
+            instance?.dispatchTaps(points, durationMs)
+        }
     }
 
     override fun onServiceConnected() {
@@ -55,5 +60,14 @@ class SMAPAccessibilityService : AccessibilityService() {
             .addStroke(GestureDescription.StrokeDescription(path, 0, durationMs))
             .build()
         dispatchGesture(gesture, null, null)
+    }
+
+    private fun dispatchTaps(points: List<Pair<Float, Float>>, durationMs: Long) {
+        if (points.isEmpty()) return
+        val builder = GestureDescription.Builder()
+        points.take(10).forEach { (x, y) ->
+            builder.addStroke(GestureDescription.StrokeDescription(Path().apply { moveTo(x, y) }, 0, durationMs))
+        }
+        dispatchGesture(builder.build(), null, null)
     }
 }

@@ -482,6 +482,9 @@ fun MainScreen(onGameModeChange: (Boolean) -> Unit = {}) {
                 PracticePanel(
                     item = practiceItem!!,
                     pitch = pitch,
+                    positionMs = positionMs,
+                    playing = isPlaying,
+                    onPositionChange = { positionMs = it },
                     gameMode = gameMode,
                     onBack = { practiceItem = null },
                     onGameMode = {
@@ -552,7 +555,8 @@ fun MainScreen(onGameModeChange: (Boolean) -> Unit = {}) {
                         api = cloudApi,
                         onDownloaded = { sheet ->
                             withContext(Dispatchers.IO) {
-                                cloudApi.download(sheet).getOrThrow().let { repository.importDownloaded(sheet.title, it).getOrThrow() }
+                                val songBytes = cloudApi.download(sheet).getOrThrow()
+                                repository.importDownloaded(sheet.title, songBytes, cloudApi.cover(sheet)).getOrThrow()
                             }
                             items = withContext(Dispatchers.IO) { repository.loadSongs() }
                             Toast.makeText(context, trf("已下载到本地曲库「%s」", sheet.title), Toast.LENGTH_SHORT).show()
@@ -621,7 +625,10 @@ fun MainScreen(onGameModeChange: (Boolean) -> Unit = {}) {
                     onPractice = {
                         val target = nowPlaying ?: selectedItem
                         if (target == null) Toast.makeText(context, tr("请先选择一首歌曲"), Toast.LENGTH_SHORT).show()
-                        else practiceItem = target
+                        else {
+                            practiceItem = target
+                            positionMs = target.song.songNotes.minOfOrNull { it.time }?.toLong() ?: 0L
+                        }
                     },
                     modifier = Modifier.weight(0.58f)
                 )
@@ -693,8 +700,12 @@ fun MainScreen(onGameModeChange: (Boolean) -> Unit = {}) {
                 (nowPlaying ?: selectedItem)?.let { favorites = preferences.toggleFavorite(it.fileName) }
             },
             onSeek = { fraction ->
-                val current = nowPlaying ?: return@BottomBar
+                val current = nowPlaying ?: practiceItem ?: return@BottomBar
                 val target = (current.song.durationMs * fraction).toLong()
+                if (practiceItem != null && !isPlaying) {
+                    positionMs = target
+                    return@BottomBar
+                }
                 val wasPaused = isPaused
                 startPlayback(current, true, playlist, target)
                 if (wasPaused) {

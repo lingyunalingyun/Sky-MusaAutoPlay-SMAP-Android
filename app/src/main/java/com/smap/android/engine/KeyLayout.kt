@@ -11,10 +11,12 @@ data class KeyLayout(
     val panelY: Float = 0.12f,  // 面板中心 Y 偏移（比例，正 = 偏下）
     val keyW: Float = 0.15f,    // 键宽（比例）
     val keyH: Float = 0.10f,    // 键高（比例）
-    val rowGap: Float = 0.03f   // 行间距（比例）
+    val rowGap: Float = 0.03f,  // 行间距（比例）
+    val customKeys: List<KeyPoint>? = null
 ) {
     /** 计算 15 个键的中心坐标（比例 0~1），顺序 = key 0~14 */
     fun computeKeys(): List<KeyPoint> {
+        customKeys?.takeIf { it.size == 15 }?.let { return it }
         val gapX = keyW * 0.15f
         val totalW = 5 * keyW + 4 * gapX
         val totalH = 3 * keyH + 2 * rowGap
@@ -39,16 +41,26 @@ object KeyLayoutStore {
     private const val K_W = "keyW"
     private const val K_H = "keyH"
     private const val K_GAP = "rowGap"
+    private const val K_CUSTOM = "customKeys"
 
     fun load(context: Context): KeyLayout {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (!p.contains(K_W)) return KeyLayout()
+        val custom = p.getString(K_CUSTOM, null)?.split(';')?.mapNotNull { encoded ->
+            val parts = encoded.split(',')
+            if (parts.size != 2) null else {
+                val x = parts[0].toFloatOrNull()
+                val y = parts[1].toFloatOrNull()
+                if (x == null || y == null) null else KeyPoint(x, y)
+            }
+        }?.takeIf { it.size == 15 }
         return KeyLayout(
             panelX = p.getFloat(K_X, 0f),
             panelY = p.getFloat(K_Y, 0.12f),
             keyW = p.getFloat(K_W, 0.15f),
             keyH = p.getFloat(K_H, 0.10f),
-            rowGap = p.getFloat(K_GAP, 0.03f)
+            rowGap = p.getFloat(K_GAP, 0.03f),
+            customKeys = custom
         )
     }
 
@@ -59,6 +71,7 @@ object KeyLayoutStore {
             .putFloat(K_W, l.keyW)
             .putFloat(K_H, l.keyH)
             .putFloat(K_GAP, l.rowGap)
+            .putString(K_CUSTOM, l.customKeys?.joinToString(";") { "${it.xRatio},${it.yRatio}" })
             .apply()
     }
 
