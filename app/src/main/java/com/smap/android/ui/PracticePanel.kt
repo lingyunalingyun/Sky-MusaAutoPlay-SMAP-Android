@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -41,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -131,12 +133,12 @@ fun PracticePanel(
 
     Box(Modifier.fillMaxSize().background(practiceBackground)) {
         Text(
-            text = "‹ ${tr("返回")}",
+            text = tr("返回"),
             color = Color.White,
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(16.dp).background(practiceKey, RoundedCornerShape(7.dp))
-                .clickable(onClick = onBack).padding(horizontal = 22.dp, vertical = 11.dp)
+                .clickable(onClick = onBack).padding(horizontal = 14.dp, vertical = 5.dp)
         )
 
         if (readMode) {
@@ -171,7 +173,7 @@ fun PracticePanel(
                 )
             }
         } else {
-            Box(Modifier.align(Alignment.Center)) {
+            Box(Modifier.align(Alignment.Center).offset(x = 10.dp)) {
                 PracticeKeyboard(
                     pitch = pitch,
                     current = (steps.getOrNull(keyboardStep)?.keys ?: intArrayOf()).toSet(),
@@ -217,7 +219,7 @@ fun PracticePanel(
             onFavorite = onFavorite,
             onInstrument = onInstrument,
             onSpeed = onSpeed,
-            modifier = Modifier.align(Alignment.BottomStart).padding(start = 76.dp, bottom = 10.dp)
+            modifier = Modifier.align(Alignment.BottomStart).padding(start = if (readMode) 76.dp else 16.dp, bottom = 10.dp)
         )
 
         if (readMode) {
@@ -254,7 +256,7 @@ private fun PracticeSongControls(
     val cover = remember(item.coverBytes) {
         item.coverBytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
     }
-    Column(modifier.width(190.dp)) {
+    Column(modifier.width(160.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(52.dp).background(Color(0xFF909090), RoundedCornerShape(6.dp)), contentAlignment = Alignment.Center) {
                 if (cover != null) Image(cover, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -266,15 +268,15 @@ private fun PracticeSongControls(
                 Text(item.song.author ?: tr("未知"), color = Color.White, fontSize = 8.sp, maxLines = 1)
                 Text(item.song.transcribedBy ?: tr("未知"), color = Color.White, fontSize = 8.sp, maxLines = 1)
             }
-            FavoriteStarIcon(favorite, Modifier.size(28.dp).clickable(onClick = onFavorite).padding(4.dp))
+            FavoriteStarIcon(favorite, Modifier.size(24.dp).clickable(onClick = onFavorite).padding(3.dp))
         }
         Spacer(Modifier.height(7.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            TransportVector(if (playMode == 1) "repeat_one" else if (playMode == 2) "shuffle" else "repeat", Modifier.size(28.dp).clickable(onClick = onPlayMode).padding(3.dp))
-            TransportVector("previous", Modifier.size(30.dp).clickable(onClick = onPrevious).padding(4.dp))
-            SMAPPlayButton(playing = playing && !paused, size = 46.dp, onClick = onPlay)
-            TransportVector("next", Modifier.size(30.dp).clickable(onClick = onNext).padding(4.dp))
-            TransportVector("list", Modifier.size(30.dp).clickable(onClick = onPlaylist).padding(5.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TransportVector(if (playMode == 1) "repeat_one" else if (playMode == 2) "shuffle" else "repeat", Modifier.size(24.dp).clickable(onClick = onPlayMode).padding(2.dp))
+            TransportVector("previous", Modifier.size(26.dp).clickable(onClick = onPrevious).padding(3.dp))
+            SMAPPlayButton(playing = playing && !paused, size = 42.dp, onClick = onPlay)
+            TransportVector("next", Modifier.size(26.dp).clickable(onClick = onNext).padding(3.dp))
+            TransportVector("list", Modifier.size(26.dp).clickable(onClick = onPlaylist).padding(4.dp))
         }
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -323,13 +325,11 @@ private fun PracticeKeyboard(
     onUp: (Int) -> Unit
 ) {
     val semitones = intArrayOf(0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24)
-    // The complete mobile practice screen also owns the lower-left controls.
-    // Keep both states inside the same central safe column so the keyboard never collides with them.
-    val keyWidth = 48.dp
+    val keyWidth = if (compact) 48.dp else 68.dp
     val keyHeight = keyWidth
-    val horizontalGap = 7.dp
-    val verticalGap = 7.dp
-    val keyboardPadding = 6.dp
+    val horizontalGap = if (compact) 7.dp else 8.dp
+    val verticalGap = if (compact) 7.dp else 7.dp
+    val keyboardPadding = if (compact) 6.dp else 18.dp
     val touchFlashes = remember { androidx.compose.runtime.mutableStateListOf(*Array(15) { 0 }) }
     Column(
         modifier = Modifier.background(practicePanel, RoundedCornerShape(14.dp)).border(1.dp, Color(0xFF38383C), RoundedCornerShape(14.dp))
@@ -427,7 +427,7 @@ private fun SheetWall(
     onPrevious: () -> Unit, onNext: () -> Unit, onSelect: (Int) -> Unit
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        PageButton("‹", page + 1, onPrevious)
+        PageButton(direction = -1, number = page + 1, onClick = onPrevious)
         Spacer(Modifier.weight(1f))
         Column(Modifier.width(448.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             repeat(4) { row ->
@@ -442,15 +442,33 @@ private fun SheetWall(
             }
         }
         Spacer(Modifier.weight(1f))
-        PageButton("›", pageCount, onNext)
+        PageButton(direction = 1, number = pageCount, onClick = onNext)
     }
 }
 
 @Composable
-private fun PageButton(symbol: String, number: Int, onClick: () -> Unit) {
+private fun PageButton(direction: Int, number: Int, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 8.dp)) {
-        Text(symbol, color = Color.White, fontSize = 29.sp, modifier = Modifier.size(42.dp).border(1.dp, Color(0xFF606066), CircleShape)
-            .clickable(onClick = onClick).padding(horizontal = 12.dp))
+        Box(
+            Modifier.size(42.dp).border(1.dp, Color(0xFF606066), CircleShape).clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(Modifier.size(18.dp)) {
+                val arrow = Path().apply {
+                    if (direction < 0) {
+                        moveTo(size.width * .72f, size.height * .12f)
+                        lineTo(size.width * .25f, size.height * .5f)
+                        lineTo(size.width * .72f, size.height * .88f)
+                    } else {
+                        moveTo(size.width * .28f, size.height * .12f)
+                        lineTo(size.width * .75f, size.height * .5f)
+                        lineTo(size.width * .28f, size.height * .88f)
+                    }
+                    close()
+                }
+                drawPath(arrow, Color(0xFFE7E7EA))
+            }
+        }
         Text(number.toString(), color = Color(0xFF9A9AA1), fontSize = 11.sp)
     }
 }
