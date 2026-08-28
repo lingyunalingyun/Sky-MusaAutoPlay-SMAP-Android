@@ -1,6 +1,6 @@
 # Third-party notices
 
-The overlay playback icons are adapted from [Lucide](https://github.com/lucide-icons/lucide).
+The overlay playback and composer control icons are adapted from [Lucide](https://github.com/lucide-icons/lucide).
 
 ISC License
 

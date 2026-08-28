@@ -1399,17 +1399,27 @@ fun RightPanel(
 }
 
 @Composable
-fun KeyboardKey(label: String, flash: Int = 0, onClick: () -> Unit = {}, modifier: Modifier = Modifier) {
+fun KeyboardKey(
+    label: String,
+    flash: Int = 0,
+    onClick: () -> Unit = {},
+    modifier: Modifier = Modifier,
+    active: Boolean = false
+) {
     val background = remember { Animatable(Color(0xFF4A4A4A)) }
     val rotation = remember { FloatAnimatable(45f) }
     val round = remember { FloatAnimatable(3f) }
     val scale = remember { FloatAnimatable(1f) }
 
-    LaunchedEffect(flash) {
-        if (flash == 0) return@LaunchedEffect
+    LaunchedEffect(flash, active) {
+        val restingColor = if (active) Color(0xFF858585) else Color(0xFF4A4A4A)
+        if (flash == 0) {
+            background.snapTo(restingColor)
+            return@LaunchedEffect
+        }
         launch {
             background.snapTo(Color(0xFF222222))
-            background.animateTo(Color(0xFF4A4A4A), tween(240))
+            background.animateTo(restingColor, tween(240))
         }
         launch {
             rotation.snapTo(45f)
@@ -1438,13 +1448,24 @@ fun KeyboardKey(label: String, flash: Int = 0, onClick: () -> Unit = {}, modifie
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Canvas(Modifier.size(30.dp)) {
-            rotate(rotation.value) {
-                drawRoundRect(
+        Canvas(Modifier.fillMaxSize().padding(10.dp)) {
+            val stroke = 1.5.dp.toPx()
+            val note = label.firstOrNull()?.uppercaseChar()
+            if (note == 'C' || note == 'E' || note == 'G' || note == 'A') {
+                drawCircle(
                     color = Color(0xFFC4C4D6),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(round.value.dp.toPx()),
-                    style = Stroke(width = 2.dp.toPx())
+                    radius = size.minDimension * 0.46f,
+                    style = Stroke(width = stroke)
                 )
+            }
+            if (note == 'C' || note == 'D' || note == 'F' || note == 'B') {
+                rotate(rotation.value) {
+                    drawRoundRect(
+                        color = Color(0xFFC4C4D6),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(round.value.dp.toPx()),
+                        style = Stroke(width = stroke)
+                    )
+                }
             }
         }
         Text(label, color = Color(0xFFF2F2F2), fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
