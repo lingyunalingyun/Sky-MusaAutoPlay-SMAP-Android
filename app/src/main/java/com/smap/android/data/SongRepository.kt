@@ -136,11 +136,12 @@ class SongRepository(private val context: Context) {
         if (fileName.endsWith(".mid", true) || fileName.endsWith(".midi", true)) return null
         val embedded = runCatching {
             val text = decodeText(bytes)
-            if (!text.contains("\"cover\"")) return null
-            val array = JSONArray(text)
-            var encoded = array.optJSONObject(0)?.optString("cover").orEmpty()
-            if (encoded.startsWith("data:")) encoded = encoded.substringAfter(',')
-            encoded.takeIf { it.isNotBlank() }?.let { Base64.decode(it, Base64.DEFAULT) }
+            if (text.contains("\"cover\"")) {
+                val array = JSONArray(text)
+                var encoded = array.optJSONObject(0)?.optString("cover").orEmpty()
+                if (encoded.startsWith("data:")) encoded = encoded.substringAfter(',')
+                encoded.takeIf { it.isNotBlank() }?.let { Base64.decode(it, Base64.DEFAULT) }
+            } else null
         }.getOrNull()
         return embedded ?: coverFile(fileName).takeIf { it.isFile }?.readBytes()
     }
